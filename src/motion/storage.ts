@@ -144,7 +144,9 @@ export function parseMotion(text: string): MotionData {
   if (s.origin !== undefined) {
     if (
       !record(s.origin) ||
-      !["direct-url", "tab-capture"].includes(String(s.origin.kind)) ||
+      !["direct-url", "tab-capture", "local-helper"].includes(
+        String(s.origin.kind),
+      ) ||
       typeof s.origin.url !== "string" ||
       s.origin.url.length > 4096
     )

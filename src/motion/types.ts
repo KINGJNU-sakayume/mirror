@@ -23,7 +23,7 @@ export interface MotionFrame extends RawFrame {
   contacts?: { left: boolean; right: boolean };
 }
 export interface SourceOrigin {
-  kind: "direct-url" | "tab-capture";
+  kind: "direct-url" | "tab-capture" | "local-helper";
   url: string;
   capturedAt?: string;
 }

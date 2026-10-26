@@ -5,6 +5,7 @@
 ```text
 Direct URL → bounded CORS fetch → File
 Social URL → native tab share → crop → MediaRecorder → duration repair → File
+Social URL → local helper (127.0.0.1, yt-dlp) → job poll → mp4 → File
 Local File → object URL → inspectVideo / fingerprint
                         ↘ visible HTMLVideoElement → playback clock
                         ↘ separate muted decoder → chronological seeks

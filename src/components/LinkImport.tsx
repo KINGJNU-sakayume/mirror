@@ -14,6 +14,7 @@ import {
   type VideoLink,
 } from "../sources/links";
 import { TabCapture, type CaptureRect } from "../sources/capture";
+import { fetchViaHelper, probeHelper, type HelperStatus } from "../sources/helper";
 import type { SourceOrigin } from "../motion/types";
 interface Props {
   onClose: () => void;
@@ -28,8 +29,18 @@ export function LinkImport({ onClose, onImport }: Props) {
     [link, setLink] = useState<VideoLink | null>(null),
     [error, setError] = useState("");
   const [phase, setPhase] = useState<
-    "input" | "loading" | "opening" | "region" | "recording" | "finishing"
+    | "input"
+    | "loading"
+    | "helper"
+    | "opening"
+    | "region"
+    | "recording"
+    | "finishing"
   >("input");
+  const [helper, setHelper] = useState<HelperStatus | null | undefined>(
+      undefined,
+    ),
+    [helperProgress, setHelperProgress] = useState({ percent: 0, label: "" });
   const [received, setReceived] = useState({
       bytes: 0,
       total: null as number | null,
@@ -72,9 +83,15 @@ export function LinkImport({ onClose, onImport }: Props) {
     try {
       session.current?.dispose();
       session.current = null;
-      setLink(parseVideoLink(value));
+      const parsed = parseVideoLink(value);
+      setLink(parsed);
       setPhase("input");
       setSnapshot("");
+      setHelper(undefined);
+      if (parsed.kind !== "direct")
+        void probeHelper().then((status) => {
+          if (mounted.current) setHelper(status);
+        });
     } catch (e) {
       setError(errorText(e));
     }
@@ -112,6 +129,47 @@ export function LinkImport({ onClose, onImport }: Props) {
               ? "이 주소에서 영상 읽기를 허용하지 않거나 연결할 수 없습니다. 영상 탭 공유를 사용하거나 CORS를 허용한 MP4·WebM 주소를 입력해 주세요."
               : errorText(e),
         );
+      }
+    }
+  };
+  const autoAnalyze = async () => {
+    if (!link) return;
+    const controller = new AbortController();
+    abort.current = controller;
+    setPhase("helper");
+    setError("");
+    setHelperProgress({ percent: 0, label: "시작하는 중" });
+    try {
+      const file = await fetchViaHelper(
+        link.url,
+        controller.signal,
+        (percent, label) => {
+          if (mounted.current) setHelperProgress({ percent, label });
+        },
+      );
+      if (!mounted.current || controller.signal.aborted) return;
+      setPhase("finishing");
+      const provenance = new URL(link.url);
+      provenance.search = "";
+      await onImport(
+        file,
+        { kind: "local-helper", url: provenance.href },
+        controller.signal,
+      );
+      if (mounted.current) onClose();
+    } catch (e) {
+      if (mounted.current) {
+        setPhase("input");
+        setError(
+          controller.signal.aborted
+            ? "영상 가져오기를 취소했습니다."
+            : e instanceof TypeError
+              ? "헬퍼와 연결이 끊겼습니다. 터미널에서 npm run helper 가 실행 중인지 확인해 주세요."
+              : errorText(e),
+        );
+        void probeHelper().then((status) => {
+          if (mounted.current) setHelper(status);
+        });
       }
     }
   };
@@ -191,9 +249,13 @@ export function LinkImport({ onClose, onImport }: Props) {
       y: Math.max(0, Math.min(1, (e.clientY - b.top) / b.height)),
     };
   };
-  const active = ["loading", "opening", "recording", "finishing"].includes(
-    phase,
-  );
+  const active = [
+    "loading",
+    "helper",
+    "opening",
+    "recording",
+    "finishing",
+  ].includes(phase);
   return (
     <div className="modal-backdrop link-backdrop">
       <div
@@ -212,8 +274,8 @@ export function LinkImport({ onClose, onImport }: Props) {
         <span className="eyebrow">FROM A LINK TO MOVEMENT</span>
         <h2>보고 있는 영상을 연습으로.</h2>
         <p className="link-intro">
-          직접 영상 주소는 바로 가져옵니다. 유튜브·숏츠·릴스는 재생 탭을 공유해
-          실제 화면에서 동작을 분석합니다.
+          직접 영상 주소는 바로 가져옵니다. 유튜브·숏츠·릴스는 내 PC 헬퍼가
+          켜져 있으면 자동으로 받아 분석하고, 없으면 재생 탭을 공유해 분석합니다.
         </p>
         <form
           className="link-form"
@@ -279,8 +341,34 @@ export function LinkImport({ onClose, onImport }: Props) {
                 </p>
               </div>
             )}
+            {phase === "input" && link.kind !== "direct" && helper === null && (
+              <p className="capture-note" role="status">
+                자동 다운로드를 쓰려면 내 PC 터미널에서{" "}
+                <code>npm run helper</code>를 실행한 뒤 다시 연결하세요. 실행
+                전에는 아래 영상 탭 공유로 분석할 수 있습니다.
+              </p>
+            )}
+            {phase === "input" &&
+              link.kind !== "direct" &&
+              helper &&
+              (!helper.ytdlp || !helper.ffmpeg) && (
+                <p className="capture-note" role="alert">
+                  {!helper.ytdlp
+                    ? "헬퍼에서 yt-dlp 를 찾지 못했습니다. pip install -U yt-dlp 후 헬퍼를 다시 실행하세요."
+                    : "헬퍼에서 ffmpeg 를 찾지 못했습니다. ffmpeg 를 설치한 뒤 헬퍼를 다시 실행하세요."}
+                </p>
+              )}
             {phase === "input" && (
               <div className="link-actions">
+                {link.kind !== "direct" && helper?.ytdlp && helper.ffmpeg && (
+                  <button
+                    className="primary-button"
+                    onClick={() => void autoAnalyze()}
+                  >
+                    <ScanLine size={15} />
+                    링크로 자동 분석
+                  </button>
+                )}
                 {link.kind === "direct" && (
                   <button
                     className="primary-button"
@@ -292,7 +380,9 @@ export function LinkImport({ onClose, onImport }: Props) {
                 )}
                 <button
                   className={
-                    link.kind === "direct" ? "outline-button" : "primary-button"
+                    link.kind === "direct" || (helper?.ytdlp && helper.ffmpeg)
+                      ? "outline-button"
+                      : "primary-button"
                   }
                   onClick={() => void share()}
                 >
@@ -313,6 +403,19 @@ export function LinkImport({ onClose, onImport }: Props) {
                 {received.total && (
                   <progress value={received.bytes} max={received.total} />
                 )}
+                <button
+                  className="text-button"
+                  onClick={() => abort.current?.abort()}
+                >
+                  가져오기 취소
+                </button>
+              </div>
+            )}
+            {phase === "helper" && (
+              <div className="link-loading" role="status">
+                <span>{helperProgress.label}</span>
+                <strong>{Math.round(helperProgress.percent)}%</strong>
+                <progress value={helperProgress.percent} max={100} />
                 <button
                   className="text-button"
                   onClick={() => abort.current?.abort()}
@@ -466,7 +569,11 @@ export function LinkImport({ onClose, onImport }: Props) {
             </div>
             <div>
               <b>02 · YOUTUBE / SHORTS / REELS</b>
-              <p>원본 탭 열기 → 탭 공유 허용 → 영역 선택 → 녹화·분석</p>
+              <p>
+                헬퍼 실행 중: 링크 → 자동 다운로드 → 분석 (재생 없이)
+                <br />
+                헬퍼 없이: 원본 탭 열기 → 탭 공유 허용 → 영역 선택 → 녹화·분석
+              </p>
             </div>
           </div>
         )}
