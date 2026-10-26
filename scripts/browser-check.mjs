@@ -56,7 +56,10 @@ const hash = (b) => crypto.createHash("sha256").update(b).digest("hex");
     await page.locator(".error-message").allTextContents(),
   );
   await page.getByRole("button", { name: "연습 설정", exact: true }).click();
-  const report = await page.locator(".analysis-report").textContent();
+  const report = await page
+    .locator(".analysis-report")
+    .filter({ hasText: "분석 프레임" })
+    .textContent();
   assert(report.includes("Web Worker"), report);
   console.log("REPORT", report);
   const downloadPromise = page.waitForEvent("download");

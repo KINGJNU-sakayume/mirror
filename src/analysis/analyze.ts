@@ -164,7 +164,7 @@ export async function analyzeVideo(
     const motion = preprocess(raw, source, options, engine);
     if (motion.statistics.detected < Math.max(1, total * 0.03))
       throw new Error(
-        "한 명의 전신 동작을 충분히 찾지 못했습니다. 밝은 곳에서 머리부터 발끝까지 보이는 영상을 사용해 주세요.",
+        "한 명의 전신 동작을 충분히 찾지 못했습니다. 영상 영역과 조명을 확인해 주세요. 탭 영상이 검게 보이면 해당 영상은 화면 공유를 제한할 수 있습니다.",
       );
     return motion;
   } finally {

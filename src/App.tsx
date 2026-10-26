@@ -9,6 +9,7 @@ import {
   Focus,
   FolderOpen,
   Maximize2,
+  Link2,
   PanelRightClose,
   Pause,
   Play,
@@ -28,7 +29,7 @@ import {
 } from "lucide-react";
 import { analyzeVideo, type AnalysisProgress } from "./analysis/analyze";
 import { inspectVideo } from "./analysis/video";
-import { sampleMotion } from "./motion/preprocess";
+import { preprocess, sampleMotion } from "./motion/preprocess";
 import {
   cacheKey,
   clearCache,
@@ -47,6 +48,7 @@ import {
   type MotionData,
   type Practice,
   type VideoSource,
+  type SourceOrigin,
 } from "./motion/types";
 import { Stage, type CameraPreset } from "./scene/Stage";
 import { usePlayback } from "./player/usePlayback";
@@ -54,6 +56,7 @@ import { timecode, validLoop, type LoopRange } from "./player/timing";
 import { VideoOverlay } from "./components/VideoOverlay";
 import { Timeline } from "./components/Timeline";
 import { Inspector } from "./components/Inspector";
+import { LinkImport } from "./components/LinkImport";
 const CAMERAS: { id: CameraPreset; label: string }[] = [
   { id: "front", label: "정면" },
   { id: "back", label: "후면" },
@@ -71,9 +74,12 @@ export default function App() {
       fps: 15,
       quality: "lite",
       smoothing: true,
+      refinement: true,
     }),
     [progress, setProgress] = useState<AnalysisProgress | null>(null),
     [importing, setImporting] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const pendingAutoAnalysis = useRef(false);
   const [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [dragging, setDragging] = useState(false),
@@ -119,7 +125,12 @@ export default function App() {
       );
   };
   const loadVideo = useCallback(
-    async (file: File) => {
+    async (
+      file: File,
+      origin?: SourceOrigin,
+      autoAnalyze = false,
+      signal?: AbortSignal,
+    ) => {
       const id = ++loadId.current;
       abort.current?.abort();
       video?.pause();
@@ -129,13 +140,15 @@ export default function App() {
       setNotice("");
       const next = URL.createObjectURL(file);
       try {
-        const metadata = await inspectVideo(file, next);
-        if (id !== loadId.current) {
+        const metadata = await inspectVideo(file, next, signal);
+        if (origin) metadata.origin = origin;
+        if (id !== loadId.current || signal?.aborted) {
           URL.revokeObjectURL(next);
           return;
         }
         if (currentUrl.current) URL.revokeObjectURL(currentUrl.current);
         currentUrl.current = next;
+        pendingAutoAnalysis.current = autoAnalyze;
         setSource(metadata);
         setUrl(next);
         setMotion(null);
@@ -146,7 +159,7 @@ export default function App() {
         setNotice("영상이 준비되었습니다. 동작 분석을 시작해 주세요.");
       } catch (e) {
         URL.revokeObjectURL(next);
-        if (id === loadId.current) setError(message(e));
+        if (id === loadId.current && !signal?.aborted) setError(message(e));
       } finally {
         if (id === loadId.current) setImporting(false);
       }
@@ -189,6 +202,7 @@ export default function App() {
         options.fps,
         options.quality,
         options.smoothing,
+        options.refinement ?? false,
       );
       const cached = await readCache(key).catch(() => null);
       if (controller.signal.aborted) return;
@@ -221,6 +235,40 @@ export default function App() {
       }
     }
   };
+  useEffect(() => {
+    if (pendingAutoAnalysis.current && source && url && !importing) {
+      pendingAutoAnalysis.current = false;
+      void analyze();
+    }
+  }, [url, importing]);
+  const applyRefinement = (enabled: boolean) => {
+    setOptions((previous) => ({ ...previous, refinement: enabled }));
+    if (!motion) return;
+    const settings = {
+      fps: motion.processing.fps,
+      quality: motion.processing.quality,
+      smoothing: motion.processing.smoothing,
+      refinement: enabled,
+    };
+    const result = preprocess(
+      motion.frames.map(({ time, image, world, people }) => ({
+        time,
+        image,
+        world,
+        people,
+      })),
+      motion.source,
+      settings,
+      motion.processing.engine,
+    );
+    result.practice = practice;
+    setMotion(result);
+    setNotice(
+      enabled
+        ? "발 접지 추정·IK·관절각 보정을 적용했습니다. 원본 2D 관측값은 유지됩니다."
+        : "추가 보정을 해제하고 기본 추정으로 표시합니다.",
+    );
+  };
   const cancel = () => {
     abort.current?.abort();
     abort.current = null;
@@ -240,6 +288,7 @@ export default function App() {
         fps: data.processing.fps,
         quality: data.processing.quality,
         smoothing: data.processing.smoothing,
+        refinement: data.processing.refinement ?? false,
       });
       playback.seek(0);
       setError("");
@@ -271,6 +320,7 @@ export default function App() {
         e.metaKey ||
         e.altKey ||
         help ||
+        linkOpen ||
         /INPUT|TEXTAREA|SELECT|BUTTON/.test((e.target as HTMLElement).tagName)
       )
         return;
@@ -297,7 +347,7 @@ export default function App() {
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [playback, busy, help, toggleLoop]);
+  }, [playback, busy, help, linkOpen, toggleLoop]);
   const saveSegment = () => {
     if (!validLoop(loop, duration)) return;
     if (practice.segments.length >= 200) {
@@ -394,23 +444,43 @@ export default function App() {
             <div className="eyebrow">YOUR PRACTICE, IN PERSPECTIVE</div>
             <h1>동작을 보고, 이해하고, 내 것으로.</h1>
           </div>
-          <button
-            className="primary-button import-top"
-            disabled={importing || busy}
-            onClick={() => input.current?.click()}
-          >
-            <Plus size={16} />
-            {importing
-              ? "영상을 읽는 중…"
-              : source
-                ? "영상 바꾸기"
-                : "영상 가져오기"}
-          </button>
+          <div className="import-actions">
+            <button
+              className="outline-button link-import-button"
+              disabled={busy || importing}
+              onClick={() => {
+                video?.pause();
+                setLinkOpen(true);
+              }}
+            >
+              <Link2 size={15} />
+              링크로 분석
+            </button>
+            <button
+              className="primary-button import-top"
+              disabled={importing || busy}
+              onClick={() => input.current?.click()}
+            >
+              <Plus size={16} />
+              {importing
+                ? "영상을 읽는 중…"
+                : source
+                  ? "영상 바꾸기"
+                  : "영상 가져오기"}
+            </button>
+          </div>
         </div>
         <div className="session-bar">
           <div className="session-file">
             <FileVideo2 size={15} />
             <span>{source ? source.name : "새 연습 세션"}</span>
+            {source?.origin && (
+              <span className="source-origin">
+                {source.origin.kind === "tab-capture"
+                  ? "탭에서 가져온 클립"
+                  : "URL 영상"}
+              </span>
+            )}
             {source && (
               <span className="file-meta mono">
                 {source.width} × {source.height} <span>·</span>{" "}
@@ -447,7 +517,13 @@ export default function App() {
         {(error || playback.error) && (
           <div className="message error-message" role="alert">
             <span>{error || playback.error}</span>
-            <button aria-label="오류 닫기" onClick={() => {setError(""); playback.clearError();}}>
+            <button
+              aria-label="오류 닫기"
+              onClick={() => {
+                setError("");
+                playback.clearError();
+              }}
+            >
               <X size={16} />
             </button>
           </div>
@@ -1000,6 +1076,15 @@ export default function App() {
             추정치입니다.
           </span>
           <div>
+            {source?.origin?.kind === "tab-capture" && (
+              <a
+                className="text-button captured-download"
+                href={url}
+                download={source.name}
+              >
+                <ArrowDownToLine size={13} />탭 클립 저장
+              </a>
+            )}
             {motion && (
               <button
                 className="text-button"
@@ -1026,6 +1111,7 @@ export default function App() {
             options={options}
             setOptions={changeOptions}
             busy={busy}
+            onRefine={applyRefinement}
             motion={motion}
             frame={frame}
             practice={practice}
@@ -1054,6 +1140,14 @@ export default function App() {
             }}
           />
         </>
+      )}
+      {linkOpen && (
+        <LinkImport
+          onClose={() => setLinkOpen(false)}
+          onImport={async (file, origin, signal) => {
+            await loadVideo(file, origin, true, signal);
+          }}
+        />
       )}
       {help && (
         <div className="modal-backdrop" onClick={() => setHelp(false)}>

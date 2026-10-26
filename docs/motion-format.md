@@ -63,7 +63,7 @@ Axis conversion is `[(x-hipX)*scale, -(y-hipY)*scale, -(z-hipZ)*scale]`. Scale i
 
 A front-facing T-pose has anatomical left shoulder at positive canonical X, right shoulder at negative X, head at positive Y. The front camera is at +Z, back at -Z; the dancer's left-side camera is +X, right-side camera -X. Arbitrary observed body rotations remain in the joint positions. No per-frame front-facing alignment erases turns.
 
-Stationary playback uses hip-relative articulation with a fixed ground display offset. Estimated root translation is stored separately and is **approximate**: image hip displacement and apparent stature changes. Root Y is currently zero. Ground reference is a display alignment from visible feet, not foot-contact reconstruction.
+Stationary playback uses hip-relative articulation with a fixed ground display offset. Estimated root translation is stored separately and is **approximate**: image hip displacement and apparent stature changes. Root Y optionally contains support-foot height compensation. With refinement enabled, the ground reference also drives conservative contact-aware foot IK; contact remains a monocular estimate.
 
 Mirror mode applies `[-x,y,z]` to the rendered parent only. It never swaps indices 11/12, 13/14, 15/16, etc. Original video presentation is reflected once with CSS. Selected limb labels always refer to the original dancer's anatomical side, including in back views.
 
@@ -74,3 +74,7 @@ Import rejects unknown schemas / versions, incompatible coordinates, non-finite 
 `maxGap` is 0.2 seconds. Positions only interpolate if both bracketing joints exist and the timestamp interval is short enough. Long missing stretches remain absent. Observed and inferred data stay separate.
 
 Exports include the current user's practice changes. Original video bytes and rendered camera / mirror settings are intentionally not serialized as body measurements. Future backends must convert their own coordinate conventions to this schema before import. Optional precomputed humanoid rotations can be added by a future schema revision; v1 derives them from canonical joint directions at playback.
+
+## Backward-compatible link / refinement extensions
+
+Optional `source.origin`, `processing.refinement`, `processing.refinementReport`, and `frame.contacts` are documented in [link analysis](link-analysis.md) and [refinement](refinement.md). Older v1 files remain importable. Raw image/world arrays keep their original conventions.

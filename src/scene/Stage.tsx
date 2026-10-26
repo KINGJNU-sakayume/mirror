@@ -220,16 +220,17 @@ export function Stage(props: Props) {
         if (loaded) {
           mannequin = new Mannequin(loaded.processing.boneLengths);
           body.add(mannequin.mesh);
-          rootHeight =
-            median(
-              loaded.frames.flatMap((f) =>
-                [27, 28, 31, 32].flatMap((j) =>
-                  f.joints[j] && f.joints[j]!.confidence > 0.6
-                    ? [-f.joints[j]!.position[1]]
-                    : [],
+          rootHeight = loaded.processing.refinementReport
+            ? -loaded.processing.refinementReport.groundY
+            : median(
+                loaded.frames.flatMap((f) =>
+                  [27, 28, 31, 32].flatMap((j) =>
+                    f.joints[j] && f.joints[j]!.confidence > 0.6
+                      ? [-f.joints[j]!.position[1]]
+                      : [],
+                  ),
                 ),
-              ),
-            ) || 1;
+              ) || 1;
         }
       }
       const frame = loaded ? sampleMotion(loaded, current.clock.current) : null;
@@ -237,7 +238,11 @@ export function Stage(props: Props) {
       body.scale.x = current.mirror ? -1 : 1;
       if (frame) {
         const translation = current.rootMotion ? frame.root : [0, 0, 0];
-        body.position.set(translation[0], rootHeight + 0.055, translation[2]);
+        body.position.set(
+          translation[0],
+          rootHeight + (frame.root[1] || 0) + 0.055,
+          translation[2],
+        );
         skeleton.visible = true;
         jointMeshes.forEach((m, i) => {
           const j = frame.joints[i];

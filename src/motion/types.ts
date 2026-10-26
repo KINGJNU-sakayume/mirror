@@ -20,6 +20,21 @@ export interface RawFrame {
 export interface MotionFrame extends RawFrame {
   joints: (Joint | null)[];
   root: Vec3;
+  contacts?: { left: boolean; right: boolean };
+}
+export interface SourceOrigin {
+  kind: "direct-url" | "tab-capture";
+  url: string;
+  capturedAt?: string;
+}
+export interface RefinementReport {
+  version: 1;
+  groundY: number;
+  contactFrames: number;
+  ikAdjustments: number;
+  angleConstraints: number;
+  maxFootAdjustment: number;
+  assumption: "fixed-camera";
 }
 export interface VideoSource {
   name: string;
@@ -28,6 +43,7 @@ export interface VideoSource {
   height: number;
   duration: number;
   fingerprint: string;
+  origin?: SourceOrigin;
 }
 export interface PracticeSegment {
   id: string;
@@ -45,6 +61,7 @@ export interface AnalysisOptions {
   fps: number;
   quality: Quality;
   smoothing: boolean;
+  refinement?: boolean;
 }
 export interface MotionData {
   schema: "form.motion";
@@ -64,6 +81,7 @@ export interface MotionData {
     scale: number;
     engine: "worker" | "main-thread";
     boneLengths: Record<string, number>;
+    refinementReport?: RefinementReport;
   };
   frames: MotionFrame[];
   statistics: {

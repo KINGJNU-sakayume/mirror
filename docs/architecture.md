@@ -3,6 +3,8 @@
 ## Data flow
 
 ```text
+Direct URL → bounded CORS fetch → File
+Social URL → native tab share → crop → MediaRecorder → duration repair → File
 Local File → object URL → inspectVideo / fingerprint
                         ↘ visible HTMLVideoElement → playback clock
                         ↘ separate muted decoder → chronological seeks
@@ -38,7 +40,7 @@ Each frame is transferred and released before the next is decoded. One in-flight
 - Constrain arm / leg chain segment lengths to robust clip medians.
 - Preserve absent joints; skeleton segments disappear instead of inventing motion.
 
-Estimated root X follows image hip movement; estimated depth follows apparent body size. These are labeled approximate. Stationary presentation discards these translations. The stage adds a fixed ground reference from observed feet; it is not contact-aware IK.
+Estimated root X follows image hip movement; estimated depth follows apparent body size. These are labeled approximate. Stationary presentation discards these translations. The optional refinement stage adds contact-aware pelvis-height compensation, anatomical folding limits and closed-form two-bone foot IK. See [refinement](refinement.md). Original observations remain unchanged.
 
 `sampleMotion` binary-searches actual timestamps and interpolates valid pairs. It refuses long intervals or unavailable joints. Neither speed nor a wall-clock animation phase is used.
 
@@ -46,9 +48,9 @@ Estimated root X follows image hip movement; estimated depth follows apparent bo
 
 `scene/Stage.tsx` owns one Three.js renderer, scene, perspective and orthographic cameras, orbit controls, primitives and ray picking. It reads the current visible video's clock every render. Camera state is independent of dancer motion. Presets show actual 3D points. All camera / geometry / material / skeleton resources are disposed on unmount or replacement.
 
-`scene/mannequin.ts` authors an original 21-bone T-pose hierarchy. A merged mesh contains body cylinders and joint spheres with actual skin indices / blended weights, bound to `THREE.Skeleton`. It is a rigged neutral mannequin, not relabeled skeleton lines. The rig's left/right arm and leg lengths are calibrated from clip medians. Its torso / shoulder offsets remain neutral.
+`scene/mannequin.ts` authors an original 21-bone T-pose hierarchy. A merged mesh contains body cylinders and joint spheres with actual skin indices / blended weights, bound to `THREE.Skeleton`. It is a rigged neutral mannequin, not relabeled skeleton lines. The rig's left/right arm and leg lengths are calibrated from clip medians. Its torso length, shoulder width and pelvis width are also calibrated from clip medians.
 
-Shoulder / hip axes establish the body basis. Each limb's measured world direction defines a rest-direction quaternion. Multiplying by the inverse parent-world rotation yields the bone-local rotation. Source-frame quaternions are spherically interpolated by source timestamp. Seeks are deterministic and never accumulate per-render smoothing delay. Missing required torso data hides the rig; missing limb data hides its corresponding branch. Exact axial twist, head gaze, joint-angle limits and foot locking remain limitations. Skeleton mode is always available for inspecting the underlying evidence.
+Shoulder / hip axes establish the body basis. Each limb's measured world direction defines a rest-direction quaternion. Multiplying by the inverse parent-world rotation yields the bone-local rotation. Source-frame quaternions are spherically interpolated by source timestamp. Seeks are deterministic and never accumulate per-render smoothing delay. Missing required torso data hides the rig; missing limb data hides its corresponding branch. Exact axial twist and head gaze remain limitations. Upstream broad angle constraints and approximate contact IK do not establish ground-truth contact or physical articulation. Skeleton mode is always available for inspecting the underlying evidence.
 
 ## Playback and practice
 
@@ -60,7 +62,7 @@ Mirroring reflects video presentation and the parent 3D group once around X. Lan
 
 ## Persistence and boundaries
 
-IndexedDB keys include source sampled-content SHA-256, analysis FPS, model and smoothing flag. Fingerprints hash the first / last 1MiB plus file size: useful accidental mismatch detection, **not** a full-file cryptographic guarantee. No original video is cached. Practice changes persist separately in localStorage by source fingerprint and are merged into JSON exports. Cache deletion leaves the current session and saved practice intact.
+IndexedDB keys include source sampled-content SHA-256, analysis FPS, model, smoothing flag and refinement setting / revision. Fingerprints hash the first / last 1MiB plus file size: useful accidental mismatch detection, **not** a full-file cryptographic guarantee. No original video is cached. Tab captures are bounded, retained only in session memory, and all capture tracks are stopped on completion or cancellation. Practice changes persist separately in localStorage by source fingerprint and are merged into JSON exports. Cache deletion leaves the current session and saved practice intact.
 
 `motion/storage.ts` validates schema, coordinate convention, finite coordinates, confidence, frame ordering, source limits, joint counts and practice bounds before imported data enters the renderer. It checks source fingerprint, dimensions and duration. Browser storage denial or quota exhaustion does not discard a successful analysis; JSON export remains available.
 

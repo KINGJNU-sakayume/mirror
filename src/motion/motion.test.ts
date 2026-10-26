@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { length, mirrorPoint, OneEuro, sub, toCanonical } from "./math";
 import { preprocess, sampleMotion } from "./preprocess";
-import { parseMotion, verifySource } from "./storage";
+import { cacheKey, parseMotion, verifySource } from "./storage";
 import {
   JOINT_NAMES,
   type Landmark,
@@ -216,6 +216,48 @@ describe("versioned import boundary", () => {
       JSON.stringify(d),
     );
   });
+  it("round-trips refinement reports, contacts, and source provenance", () => {
+    const d = preprocess(
+      [body(0), body(0.1), body(0.2)],
+      {
+        ...source,
+        origin: {
+          kind: "tab-capture",
+          url: "https://www.youtube.com/watch?v=M7lc1UVf-VE",
+        },
+      },
+      { fps: 15, quality: "lite", smoothing: false, refinement: true },
+      "worker",
+    );
+    expect(JSON.stringify(parseMotion(JSON.stringify(d)))).toBe(
+      JSON.stringify(d),
+    );
+  });
+  it("rejects invalid refinement metadata", () => {
+    const d = data([body(0)]);
+    d.processing.refinementReport = {
+      version: 1,
+      assumption: "fixed-camera",
+      groundY: NaN,
+      contactFrames: 1,
+      ikAdjustments: 1,
+      angleConstraints: 0,
+      maxFootAdjustment: 0,
+    };
+    expect(() => parseMotion(JSON.stringify(d))).toThrow();
+  });
+  it("rejects unsafe imported provenance", () => {
+    const d = data([body(0)]);
+    d.source = {
+      ...d.source,
+      origin: { kind: "direct-url", url: "javascript:alert(1)" },
+    };
+    expect(() => parseMotion(JSON.stringify(d))).toThrow();
+  });
+  it("separates corrected and baseline cache entries", () =>
+    expect(cacheKey(source, 15, "lite", true, true)).not.toBe(
+      cacheKey(source, 15, "lite", true, false),
+    ));
   it("rejects other coordinate conventions", () => {
     const d = data([body(0)]);
     d.coordinates.axes = "y-down" as never;

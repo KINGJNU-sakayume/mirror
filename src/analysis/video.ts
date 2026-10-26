@@ -71,6 +71,7 @@ export async function fingerprint(file: File) {
 export async function inspectVideo(
   file: File,
   url: string,
+  signal?: AbortSignal,
 ): Promise<VideoSource> {
   if (file.type && !file.type.startsWith("video/"))
     throw new Error(
@@ -81,7 +82,7 @@ export async function inspectVideo(
   video.muted = true;
   video.playsInline = true;
   try {
-    const loaded = waitForVideo(video, "loadeddata");
+    const loaded = waitForVideo(video, "loadeddata", signal);
     video.src = url;
     await loaded;
     if (!Number.isFinite(video.duration) || video.duration <= 0)

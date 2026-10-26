@@ -11,6 +11,7 @@ interface Props {
   options: AnalysisOptions;
   setOptions: (o: AnalysisOptions) => void;
   busy: boolean;
+  onRefine: (enabled: boolean) => void;
   motion: MotionData | null;
   frame: MotionFrame | null;
   practice: Practice;
@@ -88,6 +89,41 @@ export function Inspector(p: Props) {
           설정을 바꾸면 다시 분석해 주세요. 빠른 동작을 보존하면서 작은 흔들림을
           줄입니다.
         </p>
+      </section>
+      <section>
+        <h3>접지·관절 보정</h3>
+        <label className="check-label">
+          <input
+            type="checkbox"
+            checked={p.options.refinement ?? false}
+            disabled={p.busy}
+            onChange={(e) => p.onRefine(e.target.checked)}
+          />
+          발 접지 추정 · IK · 관절각 제약
+        </label>
+        <p>
+          고정된 카메라에서 느리게 움직이는 지지 발을 찾고, 골반 높이와 다리
+          자세를 보정합니다. 들린 발이나 불확실한 구간에는 고정을 적용하지
+          않습니다. 재분석 없이 켜고 끄며 비교할 수 있습니다. 조정 거리는 기준
+          체형에 맞춘 상대 크기입니다.
+        </p>
+        {p.motion?.processing.refinementReport && (
+          <dl className="analysis-report">
+            <dt>접지 추정 프레임</dt>
+            <dd>{p.motion.processing.refinementReport.contactFrames}</dd>
+            <dt>발 IK 보정</dt>
+            <dd>{p.motion.processing.refinementReport.ikAdjustments}회</dd>
+            <dt>관절각 제약 적용</dt>
+            <dd>{p.motion.processing.refinementReport.angleConstraints}회</dd>
+            <dt>최대 발 조정량</dt>
+            <dd>
+              {(
+                p.motion.processing.refinementReport.maxFootAdjustment * 100
+              ).toFixed(1)}{" "}
+              cm
+            </dd>
+          </dl>
+        )}
       </section>
       <section>
         <h3>3D 표시</h3>

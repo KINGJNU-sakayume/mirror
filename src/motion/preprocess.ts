@@ -1,3 +1,4 @@
+import { refineMotion } from "./refine";
 import {
   add,
   clamp,
@@ -148,6 +149,39 @@ export function preprocess(
           child.position = add(parent.position, mul(delta, target / len));
       }
     }
+  for (const [key, a, b] of [
+    ["shoulders", 11, 12],
+    ["pelvis", 23, 24],
+  ] as const) {
+    const measured = median(
+      frames.flatMap((f) =>
+        f.joints[a] &&
+        f.joints[b] &&
+        Math.min(f.joints[a]!.confidence, f.joints[b]!.confidence) > 0.6
+          ? [length(sub(f.joints[a]!.position, f.joints[b]!.position))]
+          : [],
+      ),
+    );
+    if (measured > 0.05) boneLengths[key] = measured;
+  }
+  const torso = median(
+    frames.flatMap((f) =>
+      f.joints[11] && f.joints[12] && f.joints[23] && f.joints[24]
+        ? [
+            length(
+              sub(
+                mul(add(f.joints[11]!.position, f.joints[12]!.position), 0.5),
+                mul(add(f.joints[23]!.position, f.joints[24]!.position), 0.5),
+              ),
+            ),
+          ]
+        : [],
+    ),
+  );
+  if (torso > 0.1) boneLengths.torso = torso;
+  const refinementReport = options.refinement
+    ? refineMotion(frames, source, boneLengths)
+    : undefined;
   return {
     schema: "form.motion",
     version: 1,
@@ -167,6 +201,7 @@ export function preprocess(
       scale,
       engine,
       boneLengths,
+      ...(refinementReport ? { refinementReport } : {}),
     },
     frames,
     statistics: {

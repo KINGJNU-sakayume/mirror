@@ -1955,3 +1955,347 @@ kbd {
     transition: none !important;
   }
 }
+.import-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.link-import-button {
+  min-height: 36px;
+  font-size: 11px;
+  padding: 0 13px;
+}
+.source-origin {
+  font-size: 8px;
+  border: 1px solid #4b593c;
+  color: #c7d6b0;
+  padding: 3px 6px;
+  white-space: nowrap;
+}
+.link-backdrop {
+  z-index: 25;
+}
+.link-dialog {
+  position: relative;
+  background: #23291f;
+  border: 1px solid #5c6b48;
+  border-radius: 5px;
+  width: 770px;
+  max-width: 100%;
+  max-height: 92dvh;
+  overflow-y: auto;
+  padding: 30px;
+  color: #dae2ce;
+}
+.link-dialog h2 {
+  font-weight: 450;
+  font-size: 24px;
+  letter-spacing: -0.7px;
+  margin: 10px 0 12px;
+}
+.link-intro {
+  font-size: 11px;
+  color: #a0b08d;
+  line-height: 1.9;
+  max-width: 610px;
+}
+.link-form {
+  display: flex;
+  gap: 8px;
+  margin: 20px 0 16px;
+}
+.link-form input {
+  flex: 1;
+  font-size: 11px;
+  min-height: 38px;
+  background: #1b2216;
+  border-color: #4a5a38;
+}
+.link-form button {
+  min-height: 38px;
+  font-size: 11px;
+  padding: 0 16px;
+}
+.link-source-label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: #c0d39f;
+  font-size: 10px;
+  margin-bottom: 12px;
+}
+.link-source-label a {
+  margin-left: auto;
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  color: #cad9b5;
+  padding: 5px 0;
+}
+.link-embed iframe {
+  width: 100%;
+  aspect-ratio: 16/9;
+  min-height: 220px;
+  border: 1px solid #485b33;
+  background: #141a10;
+}
+.link-embed.reel-embed iframe {
+  aspect-ratio: auto;
+  height: 420px;
+  max-width: 400px;
+  display: block;
+  margin: auto;
+}
+.link-embed > p {
+  font-size: 10px;
+  color: #8fa379;
+  line-height: 1.9;
+  margin: 8px 0;
+}
+.link-actions {
+  display: flex;
+  gap: 10px;
+  margin: 17px 0;
+}
+.link-paths {
+  border-top: 1px solid #414f32;
+  border-bottom: 1px solid #414f32;
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 25px;
+  padding: 20px 0;
+  margin: 22px 0;
+}
+.link-paths b {
+  font-size: 9px;
+  letter-spacing: 1px;
+  font-weight: 500;
+  color: #c0cea9;
+}
+.link-paths p {
+  font-size: 10px;
+  color: #8e9f7b;
+  line-height: 1.9;
+  margin-top: 9px;
+}
+.link-footnote {
+  font-size: 9px;
+  color: #8da076;
+  line-height: 1.9;
+  border-top: 1px solid #414f32;
+  padding-top: 17px;
+  margin-top: 20px;
+}
+.capture-note {
+  font-size: 11px;
+  line-height: 1.9;
+  color: #b1c29a;
+  margin: 15px 0;
+}
+.capture-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 10px;
+  margin: 18px 0 10px;
+  flex-wrap: wrap;
+}
+.capture-step b {
+  font-weight: 500;
+  color: #e0e9d0;
+}
+.capture-step > span {
+  color: #8fa379;
+  font-size: 9px;
+}
+.capture-step button {
+  margin-left: auto;
+  font-size: 9px;
+}
+.capture-region {
+  position: relative;
+  width: 100%;
+  border: 1px solid #6a8050;
+  overflow: hidden;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+.capture-region.portrait {
+  width: 240px;
+  max-width: 100%;
+  margin: auto;
+}
+.capture-region img {
+  width: 100%;
+  display: block;
+  pointer-events: none;
+}
+.capture-rect {
+  position: absolute;
+  outline: 2px solid #d0e09f;
+  background: #d0e09f0b;
+  box-shadow: 0 0 0 1000px #09100488;
+  pointer-events: none;
+}
+.capture-coordinates {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+  font-size: 9px;
+  color: #94a681;
+}
+.capture-coordinates > span {
+  margin-right: auto;
+}
+.capture-coordinates label {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+.capture-coordinates input {
+  width: 47px;
+  font-size: 10px;
+  padding: 4px;
+}
+.recording-state {
+  text-align: center;
+  border: 1px solid #536840;
+  padding: 32px 20px;
+  margin-top: 20px;
+}
+.recording-state > i {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background: #d5bc85;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+.recording-state > span {
+  font-size: 12px;
+}
+.recording-state strong {
+  display: block;
+  font-size: 32px;
+  color: #d6e8b4;
+  font-weight: 400;
+  margin-top: 17px;
+}
+.recording-state p {
+  font-size: 10px;
+  color: #a4b98e;
+  margin: 14px 0 23px;
+}
+.link-loading {
+  padding: 25px 0;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  flex-wrap: wrap;
+  font-size: 11px;
+}
+.link-loading strong {
+  font-family: monospace;
+  font-size: 11px;
+  font-weight: 400;
+  color: #d2e3b7;
+}
+.link-loading progress {
+  width: 100%;
+  height: 3px;
+}
+.link-dialog > .text-button {
+  margin-left: 14px;
+}
+.inspector .analysis-report {
+  margin-top: 15px;
+}
+@media (max-width: 760px) {
+  .import-actions {
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: 140px;
+  }
+  .link-import-button {
+    font-size: 9px;
+    min-height: 30px;
+    padding: 0 9px;
+  }
+  .link-import-button svg {
+    width: 12px;
+  }
+  .import-actions .import-top {
+    min-height: 30px;
+  }
+  .source-origin {
+    display: none;
+  }
+  .link-dialog {
+    padding: 25px 17px;
+  }
+  .link-dialog h2 {
+    font-size: 20px;
+  }
+  .link-intro {
+    font-size: 10px;
+  }
+  .link-form {
+    gap: 6px;
+  }
+  .link-form input {
+    font-size: 10px;
+  }
+  .link-form button {
+    padding: 0 10px;
+    font-size: 10px;
+  }
+  .link-paths {
+    grid-template-columns: 1fr;
+    gap: 17px;
+    padding: 16px 0;
+  }
+  .link-embed iframe {
+    min-height: 200px;
+  }
+  .link-source-label {
+    font-size: 9px;
+  }
+  .capture-coordinates {
+    gap: 8px;
+  }
+  .capture-coordinates > span {
+    width: 100%;
+    margin: 0;
+  }
+  .capture-coordinates input {
+    width: 42px;
+  }
+  .capture-step {
+    gap: 7px;
+  }
+  .capture-step > span {
+    font-size: 9px;
+  }
+  .link-footnote {
+    font-size: 9px;
+  }
+  .link-dialog .primary-button {
+    font-size: 10px;
+  }
+  .link-loading {
+    gap: 10px;
+    font-size: 10px;
+  }
+}
+
+.captured-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 3px 5px;
+}

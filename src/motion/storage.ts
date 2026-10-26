@@ -18,7 +18,9 @@ export const cacheKey = (
   fps: number,
   quality: string,
   smoothing: boolean,
-) => `${source.fingerprint}:${fps}:${quality}:${smoothing}`;
+  refinement = false,
+) =>
+  `${source.fingerprint}:${fps}:${quality}:${smoothing}:refine1-${refinement}`;
 export async function readCache(key: string): Promise<MotionData | null> {
   const db = await open();
   try {
@@ -139,6 +141,44 @@ export function parseMotion(text: string): MotionData {
     !num(s.duration, 0.001, 600)
   )
     return fail();
+  if (s.origin !== undefined) {
+    if (
+      !record(s.origin) ||
+      !["direct-url", "tab-capture"].includes(String(s.origin.kind)) ||
+      typeof s.origin.url !== "string" ||
+      s.origin.url.length > 4096
+    )
+      return fail();
+    try {
+      const u = new URL(s.origin.url);
+      if (!["https:", "http:"].includes(u.protocol) || u.username || u.password)
+        return fail();
+    } catch {
+      return fail();
+    }
+    if (
+      s.origin.capturedAt !== undefined &&
+      typeof s.origin.capturedAt !== "string"
+    )
+      return fail();
+  }
+  if (p.refinement !== undefined && typeof p.refinement !== "boolean")
+    return fail();
+  if (p.refinementReport !== undefined) {
+    const r = p.refinementReport;
+    if (
+      !record(r) ||
+      p.refinement !== true ||
+      r.version !== 1 ||
+      r.assumption !== "fixed-camera" ||
+      !num(r.groundY, -5, 2) ||
+      !num(r.contactFrames, 0, 18000) ||
+      !num(r.ikAdjustments, 0, 36000) ||
+      !num(r.angleConstraints, 0, 72000) ||
+      !num(r.maxFootAdjustment, 0, 1)
+    )
+      return fail();
+  }
   if (
     c.axes !== "x-right_y-up_z-toward-camera" ||
     c.units !== "normalized-meters" ||
@@ -179,6 +219,13 @@ export function parseMotion(text: string): MotionData {
       !num(f.people, 0, 100) ||
       !Array.isArray(f.joints) ||
       f.joints.length !== 33
+    )
+      return fail();
+    if (
+      f.contacts !== undefined &&
+      (!record(f.contacts) ||
+        typeof f.contacts.left !== "boolean" ||
+        typeof f.contacts.right !== "boolean")
     )
       return fail();
     last = f.time;

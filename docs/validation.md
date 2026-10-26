@@ -4,7 +4,7 @@ Verified on 2026-10-26 in managed Linux, Node 24 and headless Chromium 154.0.803
 
 ## Automated checks
 
-- **46 Vitest tests pass**: image/world axis conversion; anatomical mirror reflection and asymmetric left-hand movement; time-based interpolation and backward seeks; missing joints and long gaps; clip bone lengths; rotation and footwork preservation; motion-aware filtering; import validation and source matching; A–B boundaries; manual eight-count offsets; real SkinnedMesh binding; anatomical bone mapping; canonical retargeting independent of a mirrored parent; quaternion slerp; missing root handling.
+- **82 Vitest tests pass**: image/world axis conversion; anatomical mirror reflection and asymmetric left-hand movement; time-based interpolation and backward seeks; missing joints and long gaps; clip bone lengths; rotation and footwork preservation; motion-aware filtering; import validation and source matching; A–B boundaries; manual eight-count offsets; real SkinnedMesh binding; anatomical bone mapping; canonical retargeting independent of a mirrored parent; quaternion slerp; missing root handling; link normalization and bounded CORS imports; two-bone IK, conservative foot contacts, squat root height, evidence preservation, and optional-schema validation.
 - `npm run build` passes TypeScript and creates a Vite production bundle.
 - Both redistributed model bundles match the SHA-256 values in `THIRD_PARTY.md`.
 
@@ -58,5 +58,23 @@ The test saves its export and screenshots in ignored `work/`. It does not upload
 - No user-supplied K-POP clip was available. Fast choreography, full spins, loose clothing and prolonged real occlusion need a representative authorized video set. Unit fixtures cover asymmetry, rotation, stepping, abrupt changes and occlusion but do not prove real-video accuracy on those cases.
 - Chromium desktop and emulated mobile viewport were tested. Real mobile touch devices, Safari and Firefox remain unverified. Browser fallback compatibility is implemented; this is not a claim that every platform works.
 - Full-model assets are checked and available; the recorded end-to-end extraction used Lite. Full-model inference, very long videos, storage exhaustion and WebGL context loss need additional device tests.
-- No dedicated inverse kinematics, foot-contact locking, axial twist recovery, physical joint constraints or calibrated global movement reconstruction. See README / architecture for retargeting limits.
+- Closed-form IK, approximate foot-contact stabilization, pelvis-height compensation and broad folding limits are implemented. Exact axial twist, camera-calibrated global movement and physical dynamics remain unimplemented. See [refinement](refinement.md).
 - Actual GitHub Pages publication depends on repository Pages configuration. CI preserves successful build/test status and documents the one-time setting when Pages is not enabled; a generated bundle alone is not called a live deployment.
+
+## Link acquisition and refinement update
+
+The direct-link path fetched a real local HTTP MP4 without file input, then automatically performed **30 real frame inferences / 30 detections**. The resulting JSON recorded direct-URL provenance and a refinement report. Toggle-off/on rebuilt motion from original observations without another inference pass.
+
+A separate, visible test-media tab was opened in an isolated Chromium browser. The test used Chromium's native tab-capture auto-selection flag in that **QA process only**; it did **not** replace `getDisplayMedia`, MediaRecorder, canvas cropping, the decoder or MediaPipe. The app's normal permission prompt remains mandatory for users. A 3.589-second cropped **408×720 WebM** was recorded, repaired, imported and automatically analyzed: **54 real frame inferences / 54 single-person detections**, with no uncaught page errors. A repeat with an automatically fitted crop recorded 3.600 seconds at 404×720 and completed 55 / 55 detections. The final production build at `/mirror/` also fetched a real video from a different localhost origin using CORS and completed 30 / 30 worker inferences with refinement enabled.
+
+The captured tab played the authorized development-only TensorFlow squats fixture. This verifies native browser tab pixels → recording → actual inference. It is not a claim that an arbitrary external YouTube / Reels video was downloaded or that every provider permits capture. YouTube Shorts URL normalization and official embed construction were exercised; Instagram URL variants are unit-tested. Actual provider login, geo restrictions, DRM and real mobile screen-capture remain outside the verified set.
+
+The contact-aware reconstruction comparison and its limitations are recorded in [refinement](refinement.md). Full playback / camera / mirror / loop / mobile regressions passed again with that refined motion imported.
+
+To reproduce both actual URL ingestion and native tab capture against the dev server:
+
+```sh
+FORM_TEST_VIDEO=/path/to/authorized-person-video.mp4 FORM_BROWSER_PATH=/path/to/chromium npm run test:links
+```
+
+Use a full-body single-person video. The script copies QA media to ignored `work/` and serves it from Vite, then opens an isolated capture-source tab. `FORM_CAPTURE_VIDEO` optionally supplies a separate moving capture fixture. Auto-selection flags are confined to the test browser; production app code never supplies them.

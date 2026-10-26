@@ -27,10 +27,12 @@ No code from those repositories is included. Model attribution remains with Goog
 
 ## Other dependencies
 
-Dependency licenses remain with their authors: React (MIT), Vite (MIT), TypeScript (Apache-2.0), Three.js (MIT), Tailwind CSS (MIT), esbuild (MIT), Vitest (MIT), Lucide icons (ISC). See their npm package license files and `package-lock.json` for exact versions. No font binaries are bundled; the UI uses installed system fonts.
+Dependency licenses remain with their authors: React (MIT), Vite (MIT), TypeScript (Apache-2.0), Three.js (MIT), Tailwind CSS (MIT), esbuild (MIT), Vitest (MIT), Lucide icons (ISC), fix-webm-duration 1.0.6 (MIT, https://github.com/yusitnikov/fix-webm-duration) for local recorded-clip duration metadata. See their npm package license files and `package-lock.json` for exact versions. No font binaries are bundled; the UI uses installed system fonts.
 
 ## Original character and media
 
 The neutral 21-bone skinned mannequin and favicon are original programmatic assets authored for this project. There are no external humanoid / Mixamo / VRM models, K-POP recordings, commercial music or sample choreography assets in the shipped application.
 
 Development-only inference verification used `pose.jpg` and `pose_squats.mp4` from TensorFlow's Apache-2.0 `tfjs-models/pose-detection/test_data`. These are kept outside version control and are not included in application builds or the repository.
+
+The complete fix-webm-duration MIT notice is redistributed at `public/THIRD_PARTY_NOTICES.txt`.
