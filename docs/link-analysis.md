@@ -1,6 +1,19 @@
 # Analysis from a link
 
-FORM supports two genuine frame-acquisition routes. Both end in the same MediaPipe VIDEO inference, reconstruction, synchronization and practice tools. There is no server, downloader proxy, yt-dlp integration, page scraping, cookie harvesting or precomputed animation.
+FORM supports three genuine frame-acquisition routes. All end in the same MediaPipe VIDEO inference, reconstruction, synchronization and practice tools. The hosted app has no server, downloader proxy, page scraping, cookie harvesting or precomputed animation. The optional **local helper** (below) is a separate process the user runs on their own computer.
+
+## Local helper (YouTube / Shorts / Reels → automatic analysis)
+
+`npm run helper` starts `scripts/link-helper.mjs`, a dependency-free Node server bound to `127.0.0.1:8765`. It needs `yt-dlp` and `ffmpeg` installed on the user's computer. When the helper is running, pasting a YouTube / Shorts / Reels link in **링크로 분석** shows **링크로 자동 분석**: the app asks the helper to download the video (capped at 720p, 10 minutes, 200MiB), fetches the finished file from `127.0.0.1`, and runs the normal analysis. The source video then appears beside the 3D view as for any imported file. No tab sharing or real-time recording is needed.
+
+- The helper only accepts `https` YouTube / Instagram links, passes them to `yt-dlp` after `--` without a shell, runs one job at a time, and deletes temporary files after the app takes the file, after 15 minutes, or on exit.
+- Requests are accepted only for a `127.0.0.1` / `localhost` `Host` and from allowed app origins (`http://localhost:*`, `http://127.0.0.1:*`, plus any in `FORM_HELPER_ORIGINS`, e.g. the GitHub Pages origin). Responses include `Access-Control-Allow-Private-Network` for Chrome's local-network check on HTTPS pages; the browser may still ask for local-network permission.
+- Login-gated content: set `FORM_HELPER_COOKIES_FROM=chrome` (or firefox / edge / safari) so `yt-dlp` reads that browser's own cookies on the user's computer. Cookies are never sent to the app.
+- Nothing is uploaded to FORM or its host. The app's own network behaviour is unchanged: it only talks to `127.0.0.1` for this route.
+- Use only media you are authorized to process. Platform terms and copyright remain the user's responsibility. Platform changes can break `yt-dlp` until it is updated (`pip install -U yt-dlp`).
+- Provenance: `source.origin.kind` is `local-helper` and records the canonical link without query parameters.
+
+When the helper is not running, the tab-capture route below remains available.
 
 ## Direct media URLs
 
@@ -23,7 +36,7 @@ Official references: [getDisplayMedia](https://developer.mozilla.org/en-US/docs/
 
 ## Platform and browser limits
 
-- This is **not unattended arbitrary URL → download → 3D**. Social URLs require playback and a browser-selected capture grant. Capturing occurs in real time; inference follows recording. Direct readable media URLs can go straight to analysis without that recording step.
+- Without the local helper this is **not unattended arbitrary URL → download → 3D**. Social URLs then require playback and a browser-selected capture grant. Capturing occurs in real time; inference follows recording. Direct readable media URLs and helper downloads go straight to analysis without that recording step.
 - Desktop Chrome / Edge over HTTPS (or localhost for development) are recommended for tab capture. Unsupported browsers and mobile devices receive an actionable message; direct media / local files remain available.
 - Protected or blacked-out video, a denied capture prompt, a wrong tab or an incorrect crop can prevent tracking. There is no DRM / login / paywall bypass. Captured-source quality is bounded by viewport resolution, compression, dropped frames and the source video.
 - YouTube embedding can be disabled by the owner. Instagram embedding / login availability can vary. Opening the permitted video in its original tab and explicitly sharing that tab avoids relying on embed pixel access.
@@ -36,7 +49,7 @@ Official references: [getDisplayMedia](https://developer.mozilla.org/en-US/docs/
 `source.origin` is an optional v1 schema extension:
 
 ```ts
-{ kind: 'direct-url' | 'tab-capture'; url: string; capturedAt?: string }
+{ kind: 'direct-url' | 'tab-capture' | 'local-helper'; url: string; capturedAt?: string }
 ```
 
 `tab-capture` explicitly denotes user-selected tab pixels. Its URL is a reference, not a verified assertion about the captured tab. `capturedAt` is an ISO capture completion timestamp. Older v1 files without this field remain supported.

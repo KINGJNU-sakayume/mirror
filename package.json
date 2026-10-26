@@ -14,7 +14,8 @@
     "predev": "node scripts/prepare-assets.mjs --wasm-only",
     "prebuild": "node scripts/prepare-assets.mjs --wasm-only",
     "test:browser": "node scripts/browser-check.mjs",
-    "test:links": "node scripts/browser-links-check.mjs"
+    "test:links": "node scripts/browser-links-check.mjs",
+    "helper": "node scripts/link-helper.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "0.10.21",

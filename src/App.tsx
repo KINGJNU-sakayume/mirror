@@ -478,7 +478,9 @@ export default function App() {
               <span className="source-origin">
                 {source.origin.kind === "tab-capture"
                   ? "탭에서 가져온 클립"
-                  : "URL 영상"}
+                  : source.origin.kind === "local-helper"
+                    ? "링크에서 받은 영상"
+                    : "URL 영상"}
               </span>
             )}
             {source && (
