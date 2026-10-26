@@ -1,0 +1,9 @@
+node_modules/
+dist/
+work/
+*.tsbuildinfo
+public/wasm/
+public/models/pose_landmarker_heavy.task
+.env*
+.DS_Store
+public/pose-worker.js

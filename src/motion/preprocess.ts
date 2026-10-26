@@ -1,0 +1,250 @@
+import {
+  add,
+  clamp,
+  length,
+  lerp,
+  median,
+  mul,
+  OneEuro,
+  sub,
+  toCanonical,
+} from "./math";
+import {
+  BODY_JOINTS,
+  DEFAULT_PRACTICE,
+  LIMB_CHAINS,
+  type AnalysisOptions,
+  type Joint,
+  type MotionData,
+  type MotionFrame,
+  type RawFrame,
+  type Vec3,
+  type VideoSource,
+} from "./types";
+export const MIN_CONFIDENCE = 0.35;
+export const MAX_GAP = 0.2;
+const xyz = (p: { x: number; y: number; z: number }): Vec3 => [p.x, p.y, p.z];
+
+export function preprocess(
+  raw: RawFrame[],
+  source: VideoSource,
+  options: AnalysisOptions,
+  engine: "worker" | "main-thread",
+): MotionData {
+  const torsos = raw
+    .flatMap((f) =>
+      f.world && f.world[11]?.visibility > 0.6 && f.world[23]?.visibility > 0.6
+        ? [length(sub(xyz(f.world[11]), xyz(f.world[23])))]
+        : [],
+    )
+    .filter((n) => n > 0.15 && n < 1);
+  const scale = clamp(0.5 / (median(torsos) || 0.5), 0.5, 2);
+  const firstHip = raw.find(
+    (f) =>
+      f.image && f.image[23]?.visibility > 0.5 && f.image[24]?.visibility > 0.5,
+  )?.image;
+  const initialX = firstHip ? (firstHip[23].x + firstHip[24].x) / 2 : 0.5;
+  const initialHeight = firstHip
+    ? Math.abs((firstHip[27]?.y ?? 0.9) - firstHip[11].y)
+    : 0.6;
+  const filters = Array.from({ length: 33 }, () => [
+    new OneEuro(),
+    new OneEuro(),
+    new OneEuro(),
+  ]);
+  const previous: ({ position: Vec3; time: number } | null)[] =
+    Array(33).fill(null);
+  const rootFilters = [new OneEuro(0.7, 0.1), new OneEuro(0.7, 0.1)];
+  const frames: MotionFrame[] = raw.map((f) => {
+    const w = f.world;
+    const hip = w ? mul(add(xyz(w[23]), xyz(w[24])), 0.5) : ([0, 0, 0] as Vec3);
+    const hipsVisible =
+      w && Math.min(w[23].visibility, w[24].visibility) >= MIN_CONFIDENCE;
+    const joints: (Joint | null)[] = Array.from({ length: 33 }, (_, i) => {
+      const p = w?.[i];
+      const confidence = p ? Math.min(p.visibility, p.presence) : 0;
+      if (!p || !hipsVisible || confidence < MIN_CONFIDENCE) return null;
+      let pos = toCanonical(xyz(p), hip, scale);
+      const prev = previous[i];
+      // Reject single-frame jumps, with a generous envelope for fast hands/feet.
+      const speedLimit = [15, 16, 19, 20, 27, 28, 31, 32].includes(i) ? 24 : 14;
+      if (
+        prev &&
+        f.time - prev.time < 0.15 &&
+        length(sub(pos, prev.position)) >
+          speedLimit * (f.time - prev.time) + 0.25
+      )
+        return null;
+      previous[i] = { position: pos, time: f.time };
+      if (options.smoothing)
+        pos = pos.map((v, j) => filters[i][j].filter(v, f.time)) as Vec3;
+      return { position: pos, confidence, interpolated: false };
+    });
+    let root: Vec3 = [0, 0, 0];
+    if (f.image && hipsVisible) {
+      const x = (f.image[23].x + f.image[24].x) / 2;
+      const height = Math.abs(f.image[27].y - f.image[11].y);
+      root = [
+        rootFilters[0].filter(clamp((x - initialX) * 2.8, -2.5, 2.5), f.time),
+        0,
+        rootFilters[1].filter(
+          clamp((height / Math.max(0.1, initialHeight) - 1) * 1.5, -1, 1),
+          f.time,
+        ),
+      ];
+    }
+    return { ...f, joints, root };
+  });
+  // Fill bounded interior gaps per joint, leaving long occlusions explicitly missing.
+  for (let j = 0; j < 33; j++) {
+    let left = -1;
+    for (let i = 0; i < frames.length; i++) {
+      if (!frames[i].joints[j]) continue;
+      if (
+        left >= 0 &&
+        i - left > 1 &&
+        frames[i].time - frames[left].time <= MAX_GAP + 1e-6
+      ) {
+        const a = frames[left].joints[j]!,
+          b = frames[i].joints[j]!;
+        for (let k = left + 1; k < i; k++)
+          frames[k].joints[j] = {
+            position: lerp(
+              a.position,
+              b.position,
+              (frames[k].time - frames[left].time) /
+                (frames[i].time - frames[left].time),
+            ),
+            confidence: Math.min(a.confidence, b.confidence) * 0.75,
+            interpolated: true,
+          };
+      }
+      left = i;
+    }
+  }
+  const boneLengths: Record<string, number> = {};
+  for (const chain of LIMB_CHAINS)
+    for (let k = 1; k < chain.length; k++) {
+      const a = chain[k - 1],
+        b = chain[k];
+      const distances = frames.flatMap((f) =>
+        f.joints[a] &&
+        f.joints[b] &&
+        f.joints[a]!.confidence > 0.6 &&
+        f.joints[b]!.confidence > 0.6
+          ? [length(sub(f.joints[b]!.position, f.joints[a]!.position))]
+          : [],
+      );
+      const target = median(distances);
+      if (target <= 0) continue;
+      boneLengths[`${a}-${b}`] = target;
+      for (const f of frames) {
+        const parent = f.joints[a],
+          child = f.joints[b];
+        if (!parent || !child) continue;
+        const delta = sub(child.position, parent.position),
+          len = length(delta);
+        if (len > 1e-5)
+          child.position = add(parent.position, mul(delta, target / len));
+      }
+    }
+  return {
+    schema: "form.motion",
+    version: 1,
+    createdAt: new Date().toISOString(),
+    source,
+    coordinates: {
+      axes: "x-right_y-up_z-toward-camera",
+      units: "normalized-meters",
+      root: "hip-relative",
+      leftRight: "anatomical",
+    },
+    processing: {
+      ...options,
+      model: `MediaPipe Pose Landmarker ${options.quality} float16 v1`,
+      minConfidence: MIN_CONFIDENCE,
+      maxGap: MAX_GAP,
+      scale,
+      engine,
+      boneLengths,
+    },
+    frames,
+    statistics: {
+      total: frames.length,
+      detected: frames.filter((f) => f.world && f.joints[23] && f.joints[24])
+        .length,
+      partial: frames.filter(
+        (f) => f.world && BODY_JOINTS.filter((j) => f.joints[j]).length < 16,
+      ).length,
+      multiple: raw.filter((f) => f.people > 1).length,
+    },
+    practice: structuredClone(DEFAULT_PRACTICE),
+  };
+}
+
+export function motionInterval(
+  data: MotionData,
+  time: number,
+): { a: MotionFrame; b: MotionFrame; t: number } | null {
+  const frames = data.frames;
+  if (
+    !frames.length ||
+    time < frames[0].time - 0.1 ||
+    time > frames.at(-1)!.time + Math.max(0.1, 1 / data.processing.fps)
+  )
+    return null;
+  let lo = 0,
+    hi = frames.length - 1;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (frames[mid].time <= time) lo = mid;
+    else hi = mid - 1;
+  }
+  const a = frames[lo],
+    b = frames[Math.min(lo + 1, frames.length - 1)];
+  if (a === b || time <= a.time + 1e-6) return { a, b: a, t: 0 };
+  const t = clamp((time - a.time) / (b.time - a.time), 0, 1);
+  if (b.time - a.time > MAX_GAP + 1e-6)
+    return time - a.time < 0.04 ? { a, b: a, t: 0 } : null;
+  return { a, b, t };
+}
+export function sampleMotion(
+  data: MotionData,
+  time: number,
+): MotionFrame | null {
+  const pair = motionInterval(data, time);
+  if (!pair) return null;
+  const { a, b, t } = pair;
+  if (a === b) return a;
+  return {
+    ...a,
+    time,
+    root: lerp(a.root, b.root, t),
+    image: interpolateLandmarks(a.image, b.image, t),
+    world: interpolateLandmarks(a.world, b.world, t),
+    joints: a.joints.map((v, i) => {
+      const next = b.joints[i];
+      return v && next
+        ? {
+            position: lerp(v.position, next.position, t),
+            confidence: Math.min(v.confidence, next.confidence),
+            interpolated: v.interpolated || next.interpolated,
+          }
+        : null;
+    }),
+  };
+}
+function interpolateLandmarks(
+  a: RawFrame["image"],
+  b: RawFrame["image"],
+  t: number,
+): RawFrame["image"] {
+  if (!a || !b) return null;
+  return a.map((p, i) => ({
+    x: p.x + (b[i].x - p.x) * t,
+    y: p.y + (b[i].y - p.y) * t,
+    z: p.z + (b[i].z - p.z) * t,
+    visibility: Math.min(p.visibility, b[i].visibility),
+    presence: Math.min(p.presence, b[i].presence),
+  }));
+}
