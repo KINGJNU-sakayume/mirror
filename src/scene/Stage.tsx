@@ -1,17 +1,27 @@
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { BONES, BODY_JOINTS, type MotionData } from "../motion/types";
+import {
+  BONES,
+  JOINT_COUNT,
+  VISIBLE_JOINTS,
+  isFaceJoint,
+  isHandJoint,
+  isLeftJoint,
+  type MotionData,
+} from "../motion/types";
 import { sampleMotion } from "../motion/preprocess";
 import { median } from "../motion/math";
 import { Mannequin } from "./mannequin";
 export type CameraPreset =
   "front" | "back" | "left" | "right" | "quarter" | "free";
+export type StageMode = "skeleton" | "avatar" | "overlay";
+const VISIBLE = new Set(VISIBLE_JOINTS);
 interface Props {
   motion: MotionData | null;
   clock: MutableRefObject<number>;
   mirror: boolean;
-  mode: "skeleton" | "avatar";
+  mode: StageMode;
   markers: boolean;
   rootMotion: boolean;
   orthographic: boolean;
@@ -49,12 +59,27 @@ export function Stage(props: Props) {
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     renderer.setClearColor("#222622");
     renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(renderer.domElement);
     const scene = new THREE.Scene();
     scene.fog = new THREE.Fog("#222622", 9, 20);
     scene.add(new THREE.HemisphereLight("#ffffff", "#4b5044", 2.3));
     const light = new THREE.DirectionalLight("#fff4df", 2.6);
     light.position.set(3, 6, 4);
+    // A contact shadow grounds the body and makes depth readable from the front camera.
+    light.castShadow = true;
+    light.shadow.mapSize.set(1024, 1024);
+    Object.assign(light.shadow.camera, {
+      left: -3.5,
+      right: 3.5,
+      top: 3.5,
+      bottom: -3.5,
+      near: 0.5,
+      far: 16,
+    });
+    light.shadow.bias = -0.0005;
+    light.shadow.normalBias = 0.02;
     scene.add(light);
     const fill = new THREE.DirectionalLight("#d5e2db", 1.5);
     fill.position.set(-4, 2, -3);
@@ -65,6 +90,7 @@ export function Stage(props: Props) {
     );
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -0.02;
+    floor.receiveShadow = true;
     scene.add(floor);
     const grid = new THREE.GridHelper(20, 40, "#6c7562", "#3b4439");
     (grid.material as THREE.Material).transparent = true;
@@ -147,11 +173,14 @@ export function Stage(props: Props) {
     body.add(skeleton);
     const sphereGeometry = new THREE.SphereGeometry(0.023, 10, 8),
       boneGeometry = new THREE.CylinderGeometry(0.013, 0.013, 1, 8);
-    const jointMeshes = Array.from({ length: 33 }, (_, i) => {
+    // Fingers and face points are dense; smaller markers keep them separable.
+    const markerScale = (i: number) =>
+      isHandJoint(i) ? 0.38 : isFaceJoint(i) ? 0.6 : 1;
+    const jointMeshes = Array.from({ length: JOINT_COUNT }, (_, i) => {
       const m = new THREE.Mesh(
         sphereGeometry,
         new THREE.MeshStandardMaterial({
-          color: i % 2 === 1 ? "#c5dca1" : "#d1d4c8",
+          color: isLeftJoint(i) ? "#c5dca1" : "#d1d4c8",
           roughness: 0.7,
         }),
       );
@@ -160,15 +189,16 @@ export function Stage(props: Props) {
       skeleton.add(m);
       return m;
     });
-    const boneMeshes = BONES.map(([a]) => {
+    const boneMeshes = BONES.map(([a, b]) => {
       const m = new THREE.Mesh(
         boneGeometry,
         new THREE.MeshStandardMaterial({
-          color: a % 2 === 1 ? "#b9cf94" : "#d4d6cc",
+          color: isLeftJoint(a) ? "#b9cf94" : "#d4d6cc",
           roughness: 0.9,
         }),
       );
       m.visible = false;
+      m.userData.thickness = isHandJoint(a) || isHandJoint(b) ? 0.4 : 1;
       skeleton.add(m);
       return m;
     });
@@ -248,19 +278,19 @@ export function Stage(props: Props) {
           const j = frame.joints[i];
           m.visible =
             Boolean(j) &&
-            BODY_JOINTS.includes(i) &&
-            (current.mode === "skeleton"
+            VISIBLE.has(i) &&
+            (current.mode !== "avatar"
               ? current.markers || current.selected === i
               : current.selected === i);
           if (j) {
             m.position.fromArray(j.position);
-            m.scale.setScalar(current.selected === i ? 1.8 : 1);
+            m.scale.setScalar(markerScale(i) * (current.selected === i ? 1.8 : 1));
             m.material.color.set(
               current.selected === i
                 ? "#f2c574"
                 : j.confidence < 0.55 || j.interpolated
                   ? "#d4a46a"
-                  : i % 2 === 1
+                  : isLeftJoint(i)
                     ? "#c5dca1"
                     : "#d1d4c8",
             );
@@ -270,29 +300,34 @@ export function Stage(props: Props) {
           const [a, b] = BONES[i],
             ja = frame.joints[a],
             jb = frame.joints[b];
-          m.visible = current.mode === "skeleton" && Boolean(ja && jb);
+          m.visible = current.mode !== "avatar" && Boolean(ja && jb);
           if (ja && jb) {
             const from = new THREE.Vector3(...ja.position),
               to = new THREE.Vector3(...jb.position),
               delta = to.clone().sub(from);
             m.position.copy(from.add(to).multiplyScalar(0.5));
-            m.scale.y = delta.length();
+            m.scale.set(
+              m.userData.thickness,
+              delta.length(),
+              m.userData.thickness,
+            );
             m.quaternion.setFromUnitVectors(up, delta.normalize());
             m.material.color.set(
               Math.min(ja.confidence, jb.confidence) < 0.55 ||
                 ja.interpolated ||
                 jb.interpolated
                 ? "#b18c60"
-                : a % 2 === 1
+                : isLeftJoint(a)
                   ? "#b9cf94"
                   : "#d4d6cc",
             );
           }
         });
         if (mannequin) {
-          mannequin.mesh.visible = current.mode === "avatar";
-          if (current.mode === "avatar")
-            mannequin.updateAtTime(loaded!, current.clock.current);
+          const showBody = current.mode !== "skeleton";
+          mannequin.mesh.visible = showBody;
+          mannequin.setGhost(current.mode === "overlay");
+          if (showBody) mannequin.updateAtTime(loaded!, current.clock.current);
         }
       }
       controls.update();

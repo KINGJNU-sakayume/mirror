@@ -13,7 +13,12 @@ import {
 import {
   BODY_JOINTS,
   DEFAULT_PRACTICE,
+  FINGER_CHAINS,
+  HAND_BASES,
+  HAND_COUNT,
+  JOINT_COUNT,
   LIMB_CHAINS,
+  POSE_COUNT,
   type AnalysisOptions,
   type Joint,
   type MotionData,
@@ -24,6 +29,7 @@ import {
 } from "./types";
 export const MIN_CONFIDENCE = 0.35;
 export const MAX_GAP = 0.2;
+export const MIN_HAND_SCORE = 0.5;
 const xyz = (p: { x: number; y: number; z: number }): Vec3 => [p.x, p.y, p.z];
 
 export function preprocess(
@@ -48,21 +54,21 @@ export function preprocess(
   const initialHeight = firstHip
     ? Math.abs((firstHip[27]?.y ?? 0.9) - firstHip[11].y)
     : 0.6;
-  const filters = Array.from({ length: 33 }, () => [
+  const filters = Array.from({ length: POSE_COUNT }, () => [
     new OneEuro(),
     new OneEuro(),
     new OneEuro(),
   ]);
   const previous: ({ position: Vec3; time: number } | null)[] =
-    Array(33).fill(null);
+    Array(POSE_COUNT).fill(null);
   const rootFilters = [new OneEuro(0.7, 0.1), new OneEuro(0.7, 0.1)];
   const frames: MotionFrame[] = raw.map((f) => {
     const w = f.world;
     const hip = w ? mul(add(xyz(w[23]), xyz(w[24])), 0.5) : ([0, 0, 0] as Vec3);
     const hipsVisible =
       w && Math.min(w[23].visibility, w[24].visibility) >= MIN_CONFIDENCE;
-    const joints: (Joint | null)[] = Array.from({ length: 33 }, (_, i) => {
-      const p = w?.[i];
+    const joints: (Joint | null)[] = Array.from({ length: JOINT_COUNT }, (_, i) => {
+      const p = i < POSE_COUNT ? w?.[i] : undefined;
       const confidence = p ? Math.min(p.visibility, p.presence) : 0;
       if (!p || !hipsVisible || confidence < MIN_CONFIDENCE) return null;
       let pos = toCanonical(xyz(p), hip, scale);
@@ -97,7 +103,7 @@ export function preprocess(
     return { ...f, joints, root };
   });
   // Fill bounded interior gaps per joint, leaving long occlusions explicitly missing.
-  for (let j = 0; j < 33; j++) {
+  for (let j = 0; j < POSE_COUNT; j++) {
     let left = -1;
     for (let i = 0; i < frames.length; i++) {
       if (!frames[i].joints[j]) continue;
@@ -179,6 +185,7 @@ export function preprocess(
     ),
   );
   if (torso > 0.1) boneLengths.torso = torso;
+  const hands = attachHands(raw, frames, scale, options.smoothing, boneLengths);
   const refinementReport = options.refinement
     ? refineMotion(frames, source, boneLengths)
     : undefined;
@@ -212,9 +219,110 @@ export function preprocess(
         (f) => f.world && BODY_JOINTS.filter((j) => f.joints[j]).length < 16,
       ).length,
       multiple: raw.filter((f) => f.people > 1).length,
+      hands,
     },
     practice: structuredClone(DEFAULT_PRACTICE),
   };
+}
+
+interface HandTrack {
+  rel: Vec3[];
+  score: number;
+  interpolated: boolean;
+}
+// Finger articulation comes from the crop-refined hand model, expressed relative to its
+// wrist and then attached to the body's (filtered, length-normalized) wrist joint.
+function attachHands(
+  raw: RawFrame[],
+  frames: MotionFrame[],
+  scale: number,
+  smoothing: boolean,
+  boneLengths: Record<string, number>,
+) {
+  let detected = 0;
+  const tracks = HAND_BASES.map((_, side) => {
+    const filters = Array.from({ length: HAND_COUNT }, () => [
+      new OneEuro(2.4, 0.8),
+      new OneEuro(2.4, 0.8),
+      new OneEuro(2.4, 0.8),
+    ]);
+    const track: (HandTrack | null)[] = raw.map((f) => {
+      const obs = f.hands?.[side];
+      if (!obs || obs.score < MIN_HAND_SCORE || obs.world.length !== HAND_COUNT)
+        return null;
+      const origin = xyz(obs.world[0]);
+      const rel = obs.world.map((p, i) => {
+        const v = toCanonical(xyz(p), origin, scale);
+        return smoothing
+          ? (v.map((c, k) => filters[i][k].filter(c, f.time)) as Vec3)
+          : v;
+      });
+      return { rel, score: obs.score, interpolated: false };
+    });
+    let left = -1;
+    for (let i = 0; i < track.length; i++) {
+      if (!track[i]) continue;
+      if (
+        left >= 0 &&
+        i - left > 1 &&
+        frames[i].time - frames[left].time <= MAX_GAP + 1e-6
+      ) {
+        const a = track[left]!,
+          b = track[i]!;
+        for (let k = left + 1; k < i; k++) {
+          const t =
+            (frames[k].time - frames[left].time) /
+            (frames[i].time - frames[left].time);
+          track[k] = {
+            rel: a.rel.map((p, j) => lerp(p, b.rel[j], t)),
+            score: Math.min(a.score, b.score) * 0.75,
+            interpolated: true,
+          };
+        }
+      }
+      left = i;
+    }
+    const base = HAND_BASES[side];
+    for (const chain of FINGER_CHAINS)
+      for (let k = 1; k < chain.length; k++) {
+        const a = chain[k - 1],
+          b = chain[k];
+        const target = median(
+          track.flatMap((h) =>
+            h && !h.interpolated && h.score > 0.6
+              ? [length(sub(h.rel[b], h.rel[a]))]
+              : [],
+          ),
+        );
+        if (target <= 0) continue;
+        boneLengths[`${base + a}-${base + b}`] = target;
+        for (const h of track) {
+          if (!h) continue;
+          const delta = sub(h.rel[b], h.rel[a]),
+            len = length(delta);
+          if (len > 1e-5) h.rel[b] = add(h.rel[a], mul(delta, target / len));
+        }
+      }
+    return track;
+  });
+  frames.forEach((f, i) => {
+    let any = false;
+    HAND_BASES.forEach((base, side) => {
+      const wrist = f.joints[side === 0 ? 15 : 16],
+        h = tracks[side][i];
+      if (!wrist || !h) return;
+      any = true;
+      h.rel.forEach((rel, j) => {
+        f.joints[base + j] = {
+          position: add(wrist.position, rel),
+          confidence: Math.min(wrist.confidence, h.score),
+          interpolated: wrist.interpolated || h.interpolated,
+        };
+      });
+    });
+    if (any) detected++;
+  });
+  return detected;
 }
 
 export function motionInterval(
@@ -257,6 +365,21 @@ export function sampleMotion(
     root: lerp(a.root, b.root, t),
     image: interpolateLandmarks(a.image, b.image, t),
     world: interpolateLandmarks(a.world, b.world, t),
+    ...(a.hands || b.hands
+      ? {
+          hands: [0, 1].map((side) => {
+            const ha = a.hands?.[side],
+              hb = b.hands?.[side];
+            return ha && hb
+              ? {
+                  image: interpolateLandmarks(ha.image, hb.image, t)!,
+                  world: interpolateLandmarks(ha.world, hb.world, t)!,
+                  score: Math.min(ha.score, hb.score),
+                }
+              : null;
+          }) as RawFrame["hands"],
+        }
+      : {}),
     joints: a.joints.map((v, i) => {
       const next = b.joints[i];
       return v && next

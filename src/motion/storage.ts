@@ -1,5 +1,9 @@
 import {
   DEFAULT_PRACTICE,
+  HAND_BASES,
+  HAND_COUNT,
+  JOINT_COUNT,
+  POSE_COUNT,
   type MotionData,
   type Practice,
   type VideoSource,
@@ -19,8 +23,9 @@ export const cacheKey = (
   quality: string,
   smoothing: boolean,
   refinement = false,
+  hands = false,
 ) =>
-  `${source.fingerprint}:${fps}:${quality}:${smoothing}:refine1-${refinement}`;
+  `${source.fingerprint}:${fps}:${quality}:${smoothing}:refine1-${refinement}:hands2-${hands}`;
 export async function readCache(key: string): Promise<MotionData | null> {
   const db = await open();
   try {
@@ -91,6 +96,19 @@ function num(v: unknown, min = -1e6, max = 1e6): v is number {
 }
 const tuple = (v: unknown) =>
   Array.isArray(v) && v.length === 3 && v.every((x) => num(x, -100, 100));
+const landmarks = (arr: unknown, count: number) =>
+  Array.isArray(arr) &&
+  arr.length === count &&
+  arr.every(
+    (l) =>
+      record(l) &&
+      num(l.x, -100, 100) &&
+      num(l.y, -100, 100) &&
+      num(l.z, -100, 100) &&
+      num(l.visibility, 0, 1) &&
+      num(l.presence, 0, 1),
+  );
+export const MAX_MOTION_BYTES = 300_000_000;
 export function validatePractice(v: unknown, duration: number): Practice {
   if (
     !record(v) ||
@@ -114,8 +132,8 @@ export function validatePractice(v: unknown, duration: number): Practice {
   return v as unknown as Practice;
 }
 export function parseMotion(text: string): MotionData {
-  if (text.length > 180_000_000)
-    throw new Error("모션 JSON이 너무 큽니다. 최대 180MB를 지원합니다.");
+  if (text.length > MAX_MOTION_BYTES)
+    throw new Error("모션 JSON이 너무 큽니다. 최대 300MB를 지원합니다.");
   const d: unknown = JSON.parse(text);
   const fail = () => {
     throw new Error("FORM v1 모션 형식 또는 좌표계가 올바르지 않습니다.");
@@ -166,6 +184,7 @@ export function parseMotion(text: string): MotionData {
   }
   if (p.refinement !== undefined && typeof p.refinement !== "boolean")
     return fail();
+  if (p.hands !== undefined && typeof p.hands !== "boolean") return fail();
   if (p.refinementReport !== undefined) {
     const r = p.refinementReport;
     if (
@@ -220,9 +239,11 @@ export function parseMotion(text: string): MotionData {
       !tuple(f.root) ||
       !num(f.people, 0, 100) ||
       !Array.isArray(f.joints) ||
-      f.joints.length !== 33
+      (f.joints.length !== POSE_COUNT && f.joints.length !== JOINT_COUNT)
     )
       return fail();
+    // Body-only files from before finger analysis gain explicit missing hand joints.
+    while (f.joints.length < JOINT_COUNT) f.joints.push(null);
     if (
       f.contacts !== undefined &&
       (!record(f.contacts) ||
@@ -240,18 +261,18 @@ export function parseMotion(text: string): MotionData {
           typeof j.interpolated !== "boolean")
       )
         return fail();
-    for (const field of ["image", "world"]) {
-      const arr = f[field];
-      if (arr === null) continue;
-      if (!Array.isArray(arr) || arr.length !== 33) return fail();
-      for (const l of arr)
+    for (const field of ["image", "world"])
+      if (f[field] !== null && !landmarks(f[field], POSE_COUNT)) return fail();
+    if (f.hands !== undefined) {
+      if (!Array.isArray(f.hands) || f.hands.length !== HAND_BASES.length)
+        return fail();
+      for (const h of f.hands)
         if (
-          !record(l) ||
-          !num(l.x, -100, 100) ||
-          !num(l.y, -100, 100) ||
-          !num(l.z, -100, 100) ||
-          !num(l.visibility, 0, 1) ||
-          !num(l.presence, 0, 1)
+          h !== null &&
+          (!record(h) ||
+            !num(h.score, 0, 1) ||
+            !landmarks(h.image, HAND_COUNT) ||
+            !landmarks(h.world, HAND_COUNT))
         )
           return fail();
     }
@@ -266,6 +287,7 @@ export function parseMotion(text: string): MotionData {
       (f) => f.world && f.joints.filter(Boolean).length < 16,
     ).length,
     multiple: frames.filter((f) => f.people > 1).length,
+    hands: frames.filter((f) => HAND_BASES.some((b) => f.joints[b])).length,
   };
   return d as unknown as MotionData;
 }
@@ -282,7 +304,17 @@ export function verifySource(data: MotionData, source: VideoSource) {
 }
 export function exportMotion(data: MotionData) {
   const url = URL.createObjectURL(
-    new Blob([JSON.stringify(data)], { type: "application/json" }),
+    // 5 decimals (~10µm in normalized meters) roughly halves files with finger data.
+    new Blob(
+      [
+        JSON.stringify(data, (_, v) =>
+          typeof v === "number" && !Number.isInteger(v)
+            ? Math.round(v * 1e5) / 1e5
+            : v,
+        ),
+      ],
+      { type: "application/json" },
+    ),
   );
   const a = document.createElement("a");
   a.href = url;

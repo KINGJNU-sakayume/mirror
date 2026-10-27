@@ -48,7 +48,7 @@ const hash = (b) => crypto.createHash("sha256").update(b).digest("hex");
   await page.waitForFunction(
     () => !document.querySelector(".analysis-progress"),
     {},
-    { timeout: 120000 },
+    { timeout: Number(process.env.FORM_ANALYSIS_TIMEOUT) || 120000 },
   );
   assert.equal(
     await page.locator(".error-message").count(),
@@ -78,8 +78,12 @@ const hash = (b) => crypto.createHash("sha256").update(b).digest("hex");
     Math.ceil(motion.source.duration * motion.processing.fps),
   );
   assert(motion.statistics.detected > motion.frames.length * 0.5);
-  assert(motion.frames[0].image.length === 33);
-  assert(motion.frames[0].world.length === 33);
+  const observed = motion.frames.find((f) => f.image);
+  assert(observed.image.length === 33);
+  assert(observed.world.length === 33);
+  assert(observed.joints.length === 75, "body + two 21-point hands");
+  if (process.env.FORM_EXPECT_HANDS)
+    assert(motion.statistics.hands > 0, "finger landmarks expected");
   const ys = motion.frames
     .filter((f) => f.joints[15])
     .map((f) => f.joints[15].position[1]);
@@ -88,6 +92,8 @@ const hash = (b) => crypto.createHash("sha256").update(b).digest("hex");
     frames: motion.frames.length,
     detected: motion.statistics.detected,
     wristTravel: Math.max(...ys) - Math.min(...ys),
+    hands: motion.statistics.hands,
+    multiple: motion.statistics.multiple,
     engine: motion.processing.engine,
   });
   await page.getByRole("button", { name: "설정 닫기" }).click();
@@ -102,6 +108,7 @@ const hash = (b) => crypto.createHash("sha256").update(b).digest("hex");
   await seek(3);
   assert(await page.locator("video").evaluate((v) => v.paused));
 
+  await page.getByRole("button", { name: "스켈레톤", exact: true }).click();
   await page.getByRole("button", { name: "정면", exact: true }).click();
   await page.waitForTimeout(500);
   const front = await page.locator(".stage-canvas canvas").screenshot();
@@ -109,11 +116,23 @@ const hash = (b) => crypto.createHash("sha256").update(b).digest("hex");
   await page.waitForTimeout(500);
   const back = await page.locator(".stage-canvas canvas").screenshot();
   assert.notEqual(hash(front), hash(back));
-  await page.getByRole("button", { name: "마네킹", exact: true }).click();
+  await page.getByRole("button", { name: "인체", exact: true }).click();
   await page.waitForTimeout(500);
   await page.screenshot({ path: "work/mannequin-desktop.png", fullPage: true });
   const avatar = await page.locator(".stage-canvas canvas").screenshot();
   assert.notEqual(hash(avatar), hash(back));
+  await page.getByRole("button", { name: "¾", exact: true }).click();
+  await page.waitForTimeout(500);
+  await page
+    .locator(".stage-canvas canvas")
+    .screenshot({ path: "work/humanoid-quarter.png" });
+  await page.getByRole("button", { name: "겹쳐보기", exact: true }).click();
+  await page.waitForTimeout(500);
+  const overlay = await page
+    .locator(".stage-canvas canvas")
+    .screenshot({ path: "work/humanoid-overlay.png" });
+  assert.notEqual(hash(overlay), hash(avatar));
+  await page.getByRole("button", { name: "후면", exact: true }).click();
   await page.getByRole("button", { name: "스켈레톤", exact: true }).click();
   await page.getByRole("button", { name: "미러", exact: true }).click();
   assert(

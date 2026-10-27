@@ -17,20 +17,21 @@ interface MotionData {
     leftRight: 'anatomical';
   };
   processing: {
-    fps: number; quality: 'lite' | 'full'; smoothing: boolean;
+    fps: number; quality: 'lite' | 'full'; smoothing: boolean; hands?: boolean;
     model: string; engine: 'worker' | 'main-thread';
     minConfidence: number; maxGap: number; scale: number;
     boneLengths: Record<string, number>;
   };
   frames: {
     time: number;
-    people: number; // detections capped at two, not a crowd count
+    people: number; // detections capped at three, not a crowd count
+    hands?: [HandObservation | null, HandObservation | null]; // anatomical [left, right]
     image: Landmark[] | null;
     world: Landmark[] | null;
     joints: (Joint | null)[];
     root: [number, number, number];
   }[];
-  statistics: { total: number; detected: number; partial: number; multiple: number };
+  statistics: { total: number; detected: number; partial: number; multiple: number; hands?: number };
   practice: {
     bpm: number; offset: number;
     segments: { id: string; name: string; start: number; end: number }[];
@@ -40,6 +41,11 @@ interface Landmark {
   x: number; y: number; z: number;
   visibility: number; presence: number;
 }
+interface HandObservation {
+  image: Landmark[]; // 21, normalized to the full source frame
+  world: Landmark[]; // 21, metric hand-centered, MediaPipe axes
+  score: number;
+}
 interface Joint {
   position: [number, number, number];
   confidence: number;
@@ -47,7 +53,7 @@ interface Joint {
 }
 ```
 
-33 entries in every landmark / joint array use MediaPipe's original anatomical indices. World / image arrays are null for missed or ambiguous multi-person frames. Canonical joint arrays always contain 33 entries with individual nulls for unavailable joints. They may contain explicitly marked short-gap estimates even when the observation arrays are null. No sample motion is generated in the product.
+33 entries in every pose landmark array use MediaPipe's original anatomical indices. World / image arrays are null for missed frames or when the tracked dancer is not found. Canonical joint arrays contain **75 entries**: 0–32 pose, 33–53 left hand, 54–74 right hand (MediaPipe hand order: wrist, thumb CMC/MCP/IP/tip, then index, middle, ring, pinky MCP/PIP/DIP/tip), with individual nulls for unavailable joints. Hand joints are the hand model's wrist-relative world estimate attached to the body's wrist joint (`15` / `16`), so hand index 0 equals the body wrist. Files with 33-entry joint arrays (before finger analysis) are padded with nulls on import. They may contain explicitly marked short-gap estimates even when the observation arrays are null. No sample motion is generated in the product.
 
 ## Five coordinate spaces
 

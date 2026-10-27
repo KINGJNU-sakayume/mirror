@@ -1,26 +1,37 @@
-import { createEstimator, serializeResult } from "./estimator";
+import {
+  createEstimators,
+  DancerTracker,
+  detectFrame,
+  HAND_CROP,
+  type CropSurface,
+  type Estimators,
+} from "./estimator";
 import type { Quality } from "../motion/types";
-import type { PoseLandmarker } from "@mediapipe/tasks-vision";
-let estimator: PoseLandmarker | null = null;
+let estimators: Estimators | null = null;
+let crop: CropSurface | null = null;
+const tracker = new DancerTracker();
 self.onmessage = async ({ data }: MessageEvent) => {
   try {
     if (data.type === "init") {
-      estimator = await createEstimator(
+      estimators?.close();
+      tracker.reset();
+      estimators = await createEstimators(
         data.base,
         data.quality as Quality,
-        new OffscreenCanvas(1, 1),
+        Boolean(data.hands),
+        () => new OffscreenCanvas(1, 1),
       );
+      const canvas = new OffscreenCanvas(HAND_CROP, HAND_CROP);
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      crop = ctx ? { canvas, ctx } : null;
       self.postMessage({ type: "ready" });
     } else if (data.type === "frame") {
       const bitmap = data.bitmap as ImageBitmap;
       try {
-        if (!estimator) throw new Error("Estimator is not ready");
+        if (!estimators) throw new Error("Estimator is not ready");
         self.postMessage({
           type: "result",
-          frame: serializeResult(
-            estimator.detectForVideo(bitmap, data.time * 1000),
-            data.time,
-          ),
+          frame: detectFrame(estimators, tracker, bitmap, data.time, crop),
         });
       } finally {
         bitmap.close();

@@ -32,6 +32,7 @@ import { inspectVideo } from "./analysis/video";
 import { preprocess, sampleMotion } from "./motion/preprocess";
 import {
   cacheKey,
+  MAX_MOTION_BYTES,
   clearCache,
   exportMotion,
   loadPractice,
@@ -50,7 +51,7 @@ import {
   type VideoSource,
   type SourceOrigin,
 } from "./motion/types";
-import { Stage, type CameraPreset } from "./scene/Stage";
+import { Stage, type CameraPreset, type StageMode } from "./scene/Stage";
 import { usePlayback } from "./player/usePlayback";
 import { timecode, validLoop, type LoopRange } from "./player/timing";
 import { VideoOverlay } from "./components/VideoOverlay";
@@ -71,10 +72,11 @@ export default function App() {
     [video, setVideo] = useState<HTMLVideoElement | null>(null),
     [motion, setMotion] = useState<MotionData | null>(null);
   const [options, setOptions] = useState<AnalysisOptions>({
-      fps: 15,
-      quality: "lite",
+      fps: 30,
+      quality: "full",
       smoothing: true,
       refinement: true,
+      hands: true,
     }),
     [progress, setProgress] = useState<AnalysisProgress | null>(null),
     [importing, setImporting] = useState(false);
@@ -90,7 +92,7 @@ export default function App() {
     [markers, setMarkers] = useState(true),
     [rootMotion, setRootMotion] = useState(false),
     [orthographic, setOrthographic] = useState(false);
-  const [mode, setMode] = useState<"skeleton" | "avatar">("skeleton"),
+  const [mode, setMode] = useState<StageMode>("avatar"),
     [layout, setLayout] = useState<"split" | "video" | "stage">("split"),
     [preset, setPreset] = useState<CameraPreset>("quarter"),
     [reset, setReset] = useState(0),
@@ -203,6 +205,7 @@ export default function App() {
         options.quality,
         options.smoothing,
         options.refinement ?? false,
+        options.hands ?? false,
       );
       const cached = await readCache(key).catch(() => null);
       if (controller.signal.aborted) return;
@@ -217,7 +220,7 @@ export default function App() {
       setNotice(
         cached
           ? "이 브라우저에 저장된 분석을 불러왔습니다."
-          : `실제 영상의 ${result.statistics.total.toLocaleString()}개 프레임을 분석했습니다.${result.statistics.multiple ? " 여러 인물 프레임은 제외했습니다." : ""}`,
+          : `실제 영상의 ${result.statistics.total.toLocaleString()}개 프레임을 분석했습니다.${result.statistics.hands ? ` 손가락 ${result.statistics.hands.toLocaleString()}프레임.` : ""}${result.statistics.multiple ? " 여러 인물 중 한 명을 계속 추적했습니다." : ""}`,
       );
       if (!cached)
         await writeCache(key, result).catch(() =>
@@ -249,13 +252,15 @@ export default function App() {
       quality: motion.processing.quality,
       smoothing: motion.processing.smoothing,
       refinement: enabled,
+      hands: motion.processing.hands ?? false,
     };
     const result = preprocess(
-      motion.frames.map(({ time, image, world, people }) => ({
+      motion.frames.map(({ time, image, world, people, hands }) => ({
         time,
         image,
         world,
         people,
+        ...(hands ? { hands } : {}),
       })),
       motion.source,
       settings,
@@ -278,8 +283,8 @@ export default function App() {
   const importMotion = async (file: File) => {
     if (!source) return;
     try {
-      if (file.size > 180_000_000)
-        throw new Error("모션 파일은 180MB 이하로 가져와 주세요.");
+      if (file.size > MAX_MOTION_BYTES)
+        throw new Error("모션 파일은 300MB 이하로 가져와 주세요.");
       const data = parseMotion(await file.text());
       verifySource(data, source);
       setMotion(data);
@@ -289,6 +294,7 @@ export default function App() {
         quality: data.processing.quality,
         smoothing: data.processing.smoothing,
         refinement: data.processing.refinement ?? false,
+        hands: data.processing.hands ?? false,
       });
       playback.seek(0);
       setError("");
@@ -716,7 +722,14 @@ export default function App() {
                   onClick={() => setMode("avatar")}
                   aria-pressed={mode === "avatar"}
                 >
-                  마네킹
+                  인체
+                </button>
+                <button
+                  className={mode === "overlay" ? "active" : ""}
+                  onClick={() => setMode("overlay")}
+                  aria-pressed={mode === "overlay"}
+                >
+                  겹쳐보기
                 </button>
               </div>
             </div>

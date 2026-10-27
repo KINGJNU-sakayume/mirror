@@ -9,8 +9,10 @@ Social URL → local helper (127.0.0.1, yt-dlp) → job poll → mp4 → File
 Local File → object URL → inspectVideo / fingerprint
                         ↘ visible HTMLVideoElement → playback clock
                         ↘ separate muted decoder → chronological seeks
-                            → max 960px 2D canvas → transferable ImageBitmap
-                            → classic Web Worker → PoseLandmarker.detectForVideo
+                            → max 1280px 2D canvas → transferable ImageBitmap
+                            → classic Web Worker → PoseLandmarker.detectForVideo (≤3 people)
+                            → DancerTracker picks one identity
+                            → per-side wrist crop 256² → HandLandmarker.detectForVideo
                             → RawFrame[] → preprocess → MotionData → IndexedDB
                                                              ↘ JSON export/import
 Visible video.currentTime → sampleMotion(timestamp)
@@ -20,7 +22,9 @@ Visible video.currentTime → sampleMotion(timestamp)
 
 `analysis/video.ts` inspects metadata, creates a sampled-content identity and waits for decoded seek frames. The decoder never changes the playback element. Inference timestamps are the requested source-frame times in milliseconds, strictly increasing within a fresh VIDEO landmarker instance. Repeated source frames (e.g. 5fps source, 15fps sampling) remain repeated observations, not extra real temporal detail.
 
-`analysis/estimator.ts` pins CPU inference and asks for two poses to reject ambiguous multi-person frames. It preserves one person's raw normalized image landmarks, hip-relative world estimates and confidence. No network requests send video, pixels or landmarks. App / model / runtime assets are served from the app origin. MediaPipe upstream behavior is governed by its license / upstream privacy terms; FORM itself contains no analytics or upload endpoint.
+`analysis/estimator.ts` pins CPU inference and asks for up to three poses. `DancerTracker` starts with the largest visible person and then keeps the candidate nearest the previous hip center; if nobody is within 0.2 normalized units for 0.5 seconds' memory it reports a miss instead of switching identities. It preserves that person's raw normalized image landmarks, hip-relative world estimates and confidence.
+
+Finger detail: at full-frame analysis resolution a hand is only a few dozen pixels wide, so `handRegion` builds a square crop per anatomical side from the pose wrist / pinky / index / thumb (size ≥ 3.4× wrist-to-knuckle reach and ≥ 0.6× shoulder width), resamples it to 256×256 and runs one VIDEO-mode `HandLandmarker` per side. `uncropHand` maps results back to full-frame normalized coordinates and rejects a detection whose wrist does not start at that side's pose wrist (the other hand inside the crop). Side assignment comes from the pose, not MediaPipe's handedness label. No network requests send video, pixels or landmarks. App / model / runtime assets are served from the app origin. MediaPipe upstream behavior is governed by its license / upstream privacy terms; FORM itself contains no analytics or upload endpoint.
 
 ## Worker and fallback
 
@@ -49,9 +53,9 @@ Estimated root X follows image hip movement; estimated depth follows apparent bo
 
 `scene/Stage.tsx` owns one Three.js renderer, scene, perspective and orthographic cameras, orbit controls, primitives and ray picking. It reads the current visible video's clock every render. Camera state is independent of dancer motion. Presets show actual 3D points. All camera / geometry / material / skeleton resources are disposed on unmount or replacement.
 
-`scene/mannequin.ts` authors an original 21-bone T-pose hierarchy. A merged mesh contains body cylinders and joint spheres with actual skin indices / blended weights, bound to `THREE.Skeleton`. It is a rigged neutral mannequin, not relabeled skeleton lines. The rig's left/right arm and leg lengths are calibrated from clip medians. Its torso length, shoulder width and pelvis width are also calibrated from clip medians.
+`scene/mannequin.ts` authors an original 47-bone T-pose humanoid (hips, spine, chest, neck, head; per side upper arm, forearm, hand, 5×3 finger bones, thigh, shin, foot). One indexed mesh is lofted from elliptical cross-sections — torso, limbs with muscle profiles, palm, fingers, shoe — plus head ellipsoids (skull, jaw, nose, ears, eyes, hair coloring) so facing direction is readable. Joint zones blend parent/child skin weights smoothly; vertex colors separate skin, shirt, pants and shoes, with a left wristband / left shoe accent. The rig's left/right arm and leg lengths are calibrated from clip medians. Its torso length, shoulder width and pelvis width are also calibrated from clip medians.
 
-Shoulder / hip axes establish the body basis. Each limb's measured world direction defines a rest-direction quaternion. Multiplying by the inverse parent-world rotation yields the bone-local rotation. Source-frame quaternions are spherically interpolated by source timestamp. Seeks are deterministic and never accumulate per-render smoothing delay. Missing required torso data hides the rig; missing limb data hides its corresponding branch. Exact axial twist and head gaze remain limitations. Upstream broad angle constraints and approximate contact IK do not establish ground-truth contact or physical articulation. Skeleton mode is always available for inspecting the underlying evidence.
+Pelvis (hip axis) and thorax (shoulder axis) bases are solved separately; the spine takes half of the difference, reproducing waist twist and side bend. Ears and nose orient the head (clamped to ~80° from the chest), the neck takes 40%. Limbs use a full aim + secondary basis: the elbow / knee bend plane fixes upper-arm / thigh twist, the back-of-hand normal (hand knuckles, else pose index / pinky) fixes forearm and hand roll, heel→toe fixes shin and foot. Finger bones swing from their parent toward observed segment directions; without finger evidence the hand keeps a relaxed curl. Multiplying by the inverse parent-world rotation yields the bone-local rotation. Source-frame quaternions are spherically interpolated by source timestamp. Seeks are deterministic and never accumulate per-render smoothing delay. Missing required torso data hides the rig; missing limb data hides its corresponding branch. Twist is inferred from bend planes and the hand plane, so it is ambiguous on fully straight limbs without hand evidence; gaze and facial expression are not modeled. Upstream broad angle constraints and approximate contact IK do not establish ground-truth contact or physical articulation. Skeleton mode is always available for inspecting the underlying evidence.
 
 ## Playback and practice
 
