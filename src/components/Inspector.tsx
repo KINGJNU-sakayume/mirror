@@ -1,11 +1,26 @@
 import { Download, FileJson, Trash2, X } from "lucide-react";
 import {
+  HAND_COUNT,
   JOINT_NAMES,
+  LEFT_HAND,
+  RIGHT_HAND,
+  VISIBLE_JOINTS,
   type AnalysisOptions,
   type MotionData,
   type MotionFrame,
   type Practice,
 } from "../motion/types";
+const range = (start: number) =>
+  Array.from({ length: HAND_COUNT }, (_, i) => start + i);
+const JOINT_GROUPS = [
+  { label: "머리", joints: VISIBLE_JOINTS.filter((i) => i <= 10) },
+  {
+    label: "몸",
+    joints: VISIBLE_JOINTS.filter((i) => i > 10 && i < LEFT_HAND),
+  },
+  { label: "왼손", joints: range(LEFT_HAND) },
+  { label: "오른손", joints: range(RIGHT_HAND) },
+];
 interface Props {
   close: () => void;
   options: AnalysisOptions;
@@ -57,7 +72,7 @@ export function Inspector(p: Props) {
             }
           >
             <option value="lite">Lite · 빠른 분석</option>
-            <option value="full">Full · 정밀 분석</option>
+            <option value="full">Full · 정밀 분석 · 기본</option>
           </select>
         </label>
         <label>
@@ -69,9 +84,9 @@ export function Inspector(p: Props) {
               p.setOptions({ ...p.options, fps: Number(e.target.value) })
             }
           >
-            <option value={15}>15 fps · 기본</option>
+            <option value={15}>15 fps · 빠름</option>
             <option value={24}>24 fps</option>
-            <option value={30}>30 fps</option>
+            <option value={30}>30 fps · 기본</option>
           </select>
         </label>
         <label className="check-label">
@@ -84,6 +99,17 @@ export function Inspector(p: Props) {
             }
           />
           동작 적응형 흔들림 보정
+        </label>
+        <label className="check-label">
+          <input
+            type="checkbox"
+            disabled={p.busy}
+            checked={p.options.hands ?? false}
+            onChange={(e) =>
+              p.setOptions({ ...p.options, hands: e.target.checked })
+            }
+          />
+          손가락 분석 · 손 주변 고해상도 재분석 (손당 21점)
         </label>
         <p>
           설정을 바꾸면 다시 분석해 주세요. 빠른 동작을 보존하면서 작은 흔들림을
@@ -217,10 +243,14 @@ export function Inspector(p: Props) {
             }
           >
             <option value="">관절 선택</option>
-            {JOINT_NAMES.map((name, i) => (
-              <option key={i} value={i}>
-                {name}
-              </option>
+            {JOINT_GROUPS.map((group) => (
+              <optgroup key={group.label} label={group.label}>
+                {group.joints.map((i) => (
+                  <option key={i} value={i}>
+                    {JOINT_NAMES[i]}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </label>
@@ -286,7 +316,9 @@ export function Inspector(p: Props) {
             <dd>{p.motion.statistics.detected.toLocaleString()} 프레임</dd>
             <dt>부분 가림</dt>
             <dd>{p.motion.statistics.partial.toLocaleString()} 프레임</dd>
-            <dt>여러 인물 · 제외</dt>
+            <dt>손가락 검출</dt>
+            <dd>{(p.motion.statistics.hands ?? 0).toLocaleString()} 프레임</dd>
+            <dt>여러 인물 · 한 명 추적</dt>
             <dd>{p.motion.statistics.multiple.toLocaleString()} 프레임</dd>
             <dt>처리 경로</dt>
             <dd>

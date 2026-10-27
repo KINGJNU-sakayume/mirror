@@ -1,5 +1,21 @@
 import { useEffect, useRef, type MutableRefObject } from "react";
-import { BONES, BODY_JOINTS, type MotionData } from "../motion/types";
+import {
+  BONES,
+  HAND_BASES,
+  POSE_COUNT,
+  VISIBLE_JOINTS,
+  isHandJoint,
+  isLeftJoint,
+  type Landmark,
+  type MotionData,
+  type MotionFrame,
+} from "../motion/types";
+// Pose landmarks plus crop-refined hand landmarks, in full-frame normalized coordinates.
+function landmark(frame: MotionFrame, i: number): Landmark | null {
+  if (i < POSE_COUNT) return frame.image?.[i] ?? null;
+  const side = i >= HAND_BASES[1] ? 1 : 0;
+  return frame.hands?.[side]?.image[i - HAND_BASES[side]] ?? null;
+}
 import { sampleMotion } from "../motion/preprocess";
 export function VideoOverlay({
   video,
@@ -42,38 +58,37 @@ export function VideoOverlay({
           vh = video.videoHeight * scale,
           ox = (w - vw) / 2,
           oy = (h - vh) / 2;
-        const point = (i: number) => [
-          ox + frame.image![i].x * vw,
-          oy + frame.image![i].y * vh,
-        ];
-        ctx.lineWidth = 2;
+        const point = (p: Landmark) => [ox + p.x * vw, oy + p.y * vh];
         for (const [a, b] of BONES) {
-          const pa = frame.image[a],
-            pb = frame.image[b];
-          if (Math.min(pa.visibility, pb.visibility) < 0.2) continue;
+          const pa = landmark(frame, a),
+            pb = landmark(frame, b);
+          if (!pa || !pb || Math.min(pa.visibility, pb.visibility) < 0.2)
+            continue;
+          ctx.lineWidth = isHandJoint(a) ? 1.25 : 2;
           ctx.setLineDash(
             Math.min(pa.visibility, pb.visibility) < 0.55 ? [4, 4] : [],
           );
           ctx.strokeStyle =
             Math.min(pa.visibility, pb.visibility) < 0.55
               ? "#d4a46a"
-              : a % 2 === 1
+              : isLeftJoint(a)
                 ? "#c5dca1"
                 : "#f1f1e8";
           ctx.beginPath();
-          ctx.moveTo(...(point(a) as [number, number]));
-          ctx.lineTo(...(point(b) as [number, number]));
+          ctx.moveTo(...(point(pa) as [number, number]));
+          ctx.lineTo(...(point(pb) as [number, number]));
           ctx.stroke();
         }
         ctx.setLineDash([]);
-        for (const i of BODY_JOINTS) {
-          if (frame.image[i].visibility < 0.2) continue;
+        for (const i of VISIBLE_JOINTS) {
+          const p = landmark(frame, i);
+          if (!p || p.visibility < 0.2) continue;
           ctx.fillStyle =
-            i === selected ? "#f2c574" : i % 2 === 1 ? "#c5dca1" : "#f1f1e8";
+            i === selected ? "#f2c574" : isLeftJoint(i) ? "#c5dca1" : "#f1f1e8";
           ctx.beginPath();
           ctx.arc(
-            ...(point(i) as [number, number]),
-            i === selected ? 5 : 3,
+            ...(point(p) as [number, number]),
+            i === selected ? 5 : isHandJoint(i) ? 1.8 : 3,
             0,
             Math.PI * 2,
           );

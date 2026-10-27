@@ -1,5 +1,15 @@
 import { add, clamp, length, lerp, median, mul, OneEuro, sub } from "./math";
-import type { MotionFrame, RefinementReport, Vec3, VideoSource } from "./types";
+import {
+  HAND_COUNT,
+  LEFT_HAND,
+  RIGHT_HAND,
+  type MotionFrame,
+  type RefinementReport,
+  type Vec3,
+  type VideoSource,
+} from "./types";
+const handJoints = (base: number) =>
+  Array.from({ length: HAND_COUNT }, (_, i) => base + i);
 const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const unit = (a: Vec3, fallback: Vec3 = [0, 0, 1]): Vec3 =>
   length(a) > 1e-7 ? mul(a, 1 / length(a)) : fallback;
@@ -197,9 +207,9 @@ export function refineMotion(
       jc.position = solved.end;
       const delta = sub(jc.position, before);
       for (const d of c === 15
-        ? [17, 19, 21]
+        ? [17, 19, 21, ...handJoints(LEFT_HAND)]
         : c === 16
-          ? [18, 20, 22]
+          ? [18, 20, 22, ...handJoints(RIGHT_HAND)]
           : c === 27
             ? [29, 31]
             : [30, 32])

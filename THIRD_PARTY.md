@@ -1,6 +1,6 @@
 # Third-party assets and notices
 
-## MediaPipe Pose Landmarker
+## MediaPipe Pose Landmarker and Hand Landmarker
 
 Google / The MediaPipe Authors, **Apache License 2.0**. Model card / model distribution references:
 
@@ -12,11 +12,13 @@ Models are Google's version 1 float16 Tasks bundles, redistributed unchanged und
 
 - https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task
 - https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task
+- https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task (downloaded directly from Google storage)
 
 | Asset | Size | SHA-256 |
 | --- | ---: | --- |
 | `pose_landmarker_lite.task` | 5,777,746 bytes | `59929e1d1ee95287735ddd833b19cf4ac46d29bc7afddbbf6753c459690d574a` |
 | `pose_landmarker_full.task` | 9,398,198 bytes | `4eaa5eb7a98365221087693fcc286334cf0858e2eb6e15b506aa4a7ecdcec4ad` |
+| `hand_landmarker.task` | 7,819,105 bytes | `fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1` |
 
 The managed development network allowed GitHub and restricted Google storage. The initial copies were obtained from existing GitHub redistributions and pinned by the checksums above:
 
@@ -31,7 +33,7 @@ Dependency licenses remain with their authors: React (MIT), Vite (MIT), TypeScri
 
 ## Original character and media
 
-The neutral 21-bone skinned mannequin and favicon are original programmatic assets authored for this project. There are no external humanoid / Mixamo / VRM models, K-POP recordings, commercial music or sample choreography assets in the shipped application.
+The 47-bone procedural skinned humanoid and favicon are original programmatic assets authored for this project. There are no external humanoid / Mixamo / VRM models, K-POP recordings, commercial music or sample choreography assets in the shipped application.
 
 Development-only inference verification used `pose.jpg` and `pose_squats.mp4` from TensorFlow's Apache-2.0 `tfjs-models/pose-detection/test_data`. These are kept outside version control and are not included in application builds or the repository.
 

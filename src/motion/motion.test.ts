@@ -3,7 +3,11 @@ import { length, mirrorPoint, OneEuro, sub, toCanonical } from "./math";
 import { preprocess, sampleMotion } from "./preprocess";
 import { cacheKey, parseMotion, verifySource } from "./storage";
 import {
+  JOINT_COUNT,
   JOINT_NAMES,
+  LEFT_HAND,
+  RIGHT_HAND,
+  type HandObservation,
   type Landmark,
   type RawFrame,
   type VideoSource,
@@ -288,4 +292,74 @@ describe("versioned import boundary", () => {
       verifySource(data([body(0)]), { ...source, fingerprint: "different" }),
     ).toThrow();
   });
+});
+
+// MediaPipe hand world axes: x right, y down, z away; fingers point image-right.
+function hand(spread = 0.02, score = 0.9): HandObservation {
+  const world: Landmark[] = Array.from({ length: 21 }, (_, i) => ({
+    x: i === 0 ? 0 : 0.03 + (((i - 1) % 4) + 1) * 0.02,
+    y: i === 0 ? 0 : (Math.floor((i - 1) / 4) - 2) * spread,
+    z: 0,
+    visibility: score,
+    presence: score,
+  }));
+  return { image: world.map((p) => ({ ...p, x: p.x + 0.7 })), world, score };
+}
+const withHands = (f: RawFrame, left = hand(), right: HandObservation | null = null) => ({
+  ...f,
+  hands: [left, right] as RawFrame["hands"],
+});
+describe("finger analysis", () => {
+  it("adds 21 joints per hand attached at the body wrist", () => {
+    const d = data([withHands(body(0))]);
+    const f = d.frames[0];
+    expect(f.joints).toHaveLength(JOINT_COUNT);
+    expect(JOINT_NAMES).toHaveLength(JOINT_COUNT);
+    expect(f.joints[LEFT_HAND]!.position).toEqual(f.joints[15]!.position);
+    expect(f.joints[LEFT_HAND + 8]!.position[0]).toBeGreaterThan(
+      f.joints[15]!.position[0],
+    );
+    expect(f.joints[RIGHT_HAND]).toBeNull();
+    expect(d.statistics.hands).toBe(1);
+  });
+  it("converts hand axes like the body (image down becomes canonical up)", () => {
+    const f = data([withHands(body(0))]).frames[0];
+    // Thumb chain sits at negative MediaPipe y (up in the image) => positive canonical y.
+    expect(f.joints[LEFT_HAND + 4]!.position[1]).toBeGreaterThan(
+      f.joints[LEFT_HAND + 20]!.position[1],
+    );
+  });
+  it("ignores low-confidence hands", () => {
+    const f = data([withHands(body(0), hand(0.02, 0.2))]).frames[0];
+    expect(f.joints[LEFT_HAND]).toBeNull();
+  });
+  it("fills a short finger gap and labels it", () => {
+    const d = data([withHands(body(0)), body(0.1), withHands(body(0.2))]);
+    expect(d.frames[1].joints[LEFT_HAND + 8]?.interpolated).toBe(true);
+  });
+  it("follows the wrist when the arm moves", () => {
+    const d = data([withHands(body(0)), withHands(body(0.1, -0.7))]);
+    const delta = (k: number) =>
+      sub(d.frames[k].joints[LEFT_HAND + 8]!.position, d.frames[k].joints[15]!.position);
+    expect(length(sub(delta(0), delta(1)))).toBeLessThan(1e-6);
+  });
+  it("round-trips hand observations and pads body-only files", () => {
+    const d = data([withHands(body(0))]);
+    const parsed = parseMotion(JSON.stringify(d));
+    expect(parsed.frames[0].hands?.[0]?.image).toHaveLength(21);
+    const old = data([body(0)]);
+    old.frames.forEach((f) => (f.joints.length = 33));
+    const upgraded = parseMotion(JSON.stringify(old));
+    expect(upgraded.frames[0].joints).toHaveLength(JOINT_COUNT);
+    expect(upgraded.frames[0].joints[LEFT_HAND]).toBeNull();
+  });
+  it("rejects malformed hand observations", () => {
+    const d = data([withHands(body(0))]);
+    d.frames[0].hands![0]!.world = [];
+    expect(() => parseMotion(JSON.stringify(d))).toThrow();
+  });
+  it("separates finger and body-only cache entries", () =>
+    expect(cacheKey(source, 30, "full", true, true, true)).not.toBe(
+      cacheKey(source, 30, "full", true, true, false),
+    ));
 });

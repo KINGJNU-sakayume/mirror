@@ -1,7 +1,13 @@
 import type { AnalysisOptions, RawFrame, VideoSource } from "../motion/types";
 import { preprocess } from "../motion/preprocess";
 import { abortError, seekFrame, waitForVideo } from "./video";
-import { createEstimator, serializeResult } from "./estimator";
+import {
+  createEstimators,
+  DancerTracker,
+  detectFrame,
+  HAND_CROP,
+  type CropSurface,
+} from "./estimator";
 export interface AnalysisProgress {
   completed: number;
   total: number;
@@ -75,7 +81,9 @@ export async function analyzeVideo(
       "분석 프레임이 너무 많습니다. 샘플링 빈도를 낮추거나 클립을 줄여 주세요.",
     );
   let worker: WorkerEstimator | null = null;
-  let fallback: Awaited<ReturnType<typeof createEstimator>> | null = null;
+  let fallback: Awaited<ReturnType<typeof createEstimators>> | null = null;
+  const tracker = new DancerTracker();
+  let crop: CropSurface | null = null;
   let engine: "worker" | "main-thread" = "worker";
   const progress = (completed: number, message: string) =>
     onProgress({ completed, total, message, engine });
@@ -95,7 +103,12 @@ export async function analyzeVideo(
         throw new Error("OffscreenCanvas unavailable");
       worker = new WorkerEstimator(base);
       await worker.request(
-        { type: "init", base, quality: options.quality },
+        {
+          type: "init",
+          base,
+          quality: options.quality,
+          hands: options.hands ?? false,
+        },
         signal,
       );
     } catch (error) {
@@ -109,7 +122,15 @@ export async function analyzeVideo(
       engine = "main-thread";
       progress(0, "호환 모드 · 프레임 사이에 화면을 갱신합니다");
       try {
-        fallback = await createEstimator(base, options.quality);
+        fallback = await createEstimators(
+          base,
+          options.quality,
+          options.hands ?? false,
+        );
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = HAND_CROP;
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        crop = ctx ? { canvas, ctx } : null;
       } catch {
         throw new Error(
           "분석 모델을 불러오지 못했습니다. 연결을 확인한 후 페이지를 새로고침하고 다시 시도해 주세요.",
@@ -121,7 +142,8 @@ export async function analyzeVideo(
     video.src = url;
     await ready;
     const canvas = document.createElement("canvas");
-    const ratio = Math.min(1, 960 / source.width, 960 / source.height);
+    // Above the pose network input so the hand crops keep finger detail.
+    const ratio = Math.min(1, 1280 / source.width, 1280 / source.height);
     canvas.width = Math.round(source.width * ratio);
     canvas.height = Math.round(source.height * ratio);
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -146,9 +168,7 @@ export async function analyzeVideo(
         // Explicit cooperative fallback: synchronous inference outside React, one frame per task.
         await new Promise<void>((resolve) => setTimeout(resolve, 0));
         if (signal.aborted) throw abortError();
-        raw.push(
-          serializeResult(fallback!.detectForVideo(canvas, time * 1000), time),
-        );
+        raw.push(detectFrame(fallback!, tracker, canvas, time, crop));
       }
       if (i % 3 === 0 || i === total - 1)
         progress(

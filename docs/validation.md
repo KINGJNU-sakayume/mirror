@@ -1,5 +1,14 @@
 # Verification record
 
+## 2026-10-27 · finger analysis, dancer tracking and procedural humanoid
+
+Managed Linux, Node 22, headless Chromium (Playwright 1243 build) with SwiftShader WebGL.
+
+- **103 Vitest tests pass**, including new checks: dancer identity kept when a larger person enters and no jump to a distant person; hand crop region contains the pose hand and crop landmarks map back to full-frame coordinates; the other hand in a crop is rejected; 75-joint frames with hands attached at the body wrist; hand axis conversion; low-confidence hands ignored; short finger gaps filled and labeled; body-only (33-joint) JSON padded on import; malformed hand data rejected; separate cache keys for finger analysis; 47-bone humanoid with normalized skin weights; T-pose observation reproduces the rest pose; waist twist splits over spine / chest; head turns toward the nose; forearm roll follows the palm; finger bends from hand landmarks and relaxed fingers without them.
+- `pose_squats.mp4` (13 s) analyzed end-to-end at the new defaults (Full, 30 fps, fingers): **390 frames, 390 tracked, 390 with finger landmarks**, Web Worker path. `npm run test:browser` then passed with the exported JSON reimported (including humanoid, overlay and skeleton mode screenshots).
+- Throughput in this single-core sandbox: 2.70 frames/s body-only vs 1.57 frames/s with fingers (Full model). Desktop browsers are substantially faster; the ratio is the useful number.
+
+
 Verified on 2026-10-26 in managed Linux, Node 24 and headless Chromium 154.0.8037.57 with software WebGL. These are test observations, not motion-reconstruction accuracy scores.
 
 ## Automated checks

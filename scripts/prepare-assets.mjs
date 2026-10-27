@@ -22,20 +22,30 @@ await build({
   outfile: path.join(root, "public/pose-worker.js"),
   minify: true,
 });
-const hashes = {
-  lite: "59929e1d1ee95287735ddd833b19cf4ac46d29bc7afddbbf6753c459690d574a",
-  full: "4eaa5eb7a98365221087693fcc286334cf0858e2eb6e15b506aa4a7ecdcec4ad",
+const models = {
+  lite: {
+    file: "pose_landmarker_lite.task",
+    url: "pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+    hash: "59929e1d1ee95287735ddd833b19cf4ac46d29bc7afddbbf6753c459690d574a",
+  },
+  full: {
+    file: "pose_landmarker_full.task",
+    url: "pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task",
+    hash: "4eaa5eb7a98365221087693fcc286334cf0858e2eb6e15b506aa4a7ecdcec4ad",
+  },
+  hand: {
+    file: "hand_landmarker.task",
+    url: "hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+    hash: "fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1",
+  },
 };
 const verify = (bytes, quality) => {
-  if (createHash("sha256").update(bytes).digest("hex") !== hashes[quality])
+  if (createHash("sha256").update(bytes).digest("hex") !== models[quality].hash)
     throw new Error(`Invalid ${quality} model checksum`);
 };
 if (!process.argv.includes("--wasm-only")) {
-  for (const quality of ["lite", "full"]) {
-    const target = path.join(
-      root,
-      `public/models/pose_landmarker_${quality}.task`,
-    );
+  for (const quality of Object.keys(models)) {
+    const target = path.join(root, "public/models", models[quality].file);
     try {
       await access(target);
       verify(await readFile(target), quality);
@@ -44,7 +54,7 @@ if (!process.argv.includes("--wasm-only")) {
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
     }
-    const url = `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_${quality}/float16/1/pose_landmarker_${quality}.task`;
+    const url = `https://storage.googleapis.com/mediapipe-models/${models[quality].url}`;
     // Node 24's fetch honors the environment proxy with NODE_USE_ENV_PROXY=1.
     // Actions has ordinary outbound access; managed sessions can supply local models.
     console.log(`Downloading Google MediaPipe ${quality} model`);
