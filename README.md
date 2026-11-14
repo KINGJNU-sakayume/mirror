@@ -18,6 +18,8 @@ npm run dev
 npm test           # 좌표, 보간, 미러, 구간 반복, 데이터 검증, 실제 스킨 리그
 npm run build      # TypeScript 검사 + 프로덕션 빌드
 npm run preview    # 빌드 미리보기
+npm run test:watch # 변경을 감시하며 테스트 다시 실행
+npm run test:links # 링크 분석 흐름을 격리된 Chromium으로 확인 (scripts/browser-links-check.mjs)
 ```
 
 ## 사용
